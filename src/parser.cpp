@@ -1,4 +1,5 @@
 #include "parser.hpp"
+#include <print>
 
 Parser::Parser(std::string source)
     : tokens{std::move(source)} {}
@@ -236,7 +237,7 @@ std::expected<InsertStatement, CompileError> Parser::insert_statement() {
 }
 
 std::expected<DeleteStatement, CompileError> Parser::delete_statement() {
-    DeleteStatement stmt;
+    DeleteStatement stmt{};
 
     if (auto opt = expect<Keyword::Delete>())
         return std::unexpected{opt.value()};
@@ -255,13 +256,13 @@ std::expected<DeleteStatement, CompileError> Parser::delete_statement() {
     else
         return std::unexpected{ParseError::UnexpectedToken};
 
-    if (auto opt = expect<Keyword::Where>())
-        return std::unexpected{opt.value()};
+    if (accept<Keyword::Where>()) {
+        auto filter = where_declaration();
+        if (!filter.has_value())
+            return std::unexpected{filter.error()};
 
-    auto filter = where_declaration();
-    if (!filter.has_value())
-        return std::unexpected{filter.error()};
-    stmt.filter = std::move(*filter);
+        stmt.filter = std::move(*filter);
+    }
 
     if (auto opt = expect<Symbol::SemiColon>())
         return std::unexpected{opt.value()};

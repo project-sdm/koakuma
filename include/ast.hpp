@@ -2,6 +2,7 @@
 #define AST_HPP
 
 #include <format>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -76,7 +77,7 @@ struct InsertStatement {
 
 struct DeleteStatement {
     std::string table_name;
-    Filter filter;
+    std::optional<Filter> filter;
 };
 
 using Statement = std::variant<CreateStatement, SelectStatement, InsertStatement, DeleteStatement>;
@@ -270,8 +271,12 @@ struct std::formatter<DeleteStatement, char> {
     }
 
     static auto format(DeleteStatement stmt, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
-                              stmt.filter);
+        if (stmt.filter) {
+            return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
+                                  *stmt.filter);
+        }
+
+        return std::format_to(ctx.out(), "DELETE FROM {} ", stmt.table_name);
     }
 };
 
