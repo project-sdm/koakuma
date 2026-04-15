@@ -1,7 +1,6 @@
 #ifndef TOKEN_HPP
 #define TOKEN_HPP
 
-#include <cstdint>
 #include <format>
 #include <string>
 #include <type_traits>
@@ -10,23 +9,23 @@
 #include "magic_enum/magic_enum.hpp"
 #include "types.hpp"
 
-enum class Keyword : std::uint8_t {
+enum class Keyword : u8 {
     All,
-    Analyze,
+    // Analyze,
     And,
     As,
     Between,
     By,
-    Commit,
+    // Commit,
     Create,
-    Database,
+    // Database,
     Delete,
     Distinct,
     Drop,
     Explain,
     False,
     File,
-    Foreign,
+    // Foreign,
     From,
     Group,
     In,
@@ -44,13 +43,12 @@ enum class Keyword : std::uint8_t {
     Point,
     Primary,
     Radius,
-    Rollback,
+    // Rollback,
     Select,
     Set,
-    Start,
+    // Start,
     Table,
-    Text,
-    Transaction,
+    // Transaction,
     True,
     Unique,
     Update,
@@ -58,7 +56,7 @@ enum class Keyword : std::uint8_t {
     Where,
 };
 
-enum class Symbol : std::uint8_t {
+enum class Symbol : u8 {
     Asterisk,
     Comma,
     Div,
@@ -76,7 +74,7 @@ enum class Symbol : std::uint8_t {
     Sub,
 };
 
-enum class DataType : std::uint8_t {
+enum class DataType : u8 {
     Bool,
     Date,
     Int,
