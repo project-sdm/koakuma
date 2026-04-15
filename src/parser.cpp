@@ -1,5 +1,5 @@
 #include "parser.hpp"
-#include <print>
+#include <cassert>
 
 Parser::Parser(std::string source)
     : tokens{std::move(source)} {}
@@ -21,7 +21,8 @@ std::expected<SourceFile, std::vector<CompileError>> Parser::source_file() {
         if (auto stmt = statement())
             statements.emplace_back(*stmt);
         else {
-            tokens.next();
+            auto result = tokens.next();
+            assert(result.has_value());
             auto err = stmt.error();
             errors.emplace_back(err);
 
@@ -74,8 +75,6 @@ std::expected<CreateStatement, CompileError> Parser::create_statement() {
 
     if (auto* tok = res->get_if<Identifier>())
         stmt.table_name = tok->value;
-    else if (auto* tok = res->get_if<QuotedIdentifier>())
-        stmt.table_name = tok->value;
     else
         return std::unexpected{ParseError::UnexpectedToken};
 
@@ -90,8 +89,6 @@ std::expected<CreateStatement, CompileError> Parser::create_statement() {
             return std::unexpected{res.error()};
 
         if (auto* tok = res->get_if<Identifier>())
-            col.name = tok->value;
-        else if (auto* tok = res->get_if<QuotedIdentifier>())
             col.name = tok->value;
         else
             return std::unexpected{ParseError::UnexpectedToken};
@@ -111,8 +108,6 @@ std::expected<CreateStatement, CompileError> Parser::create_statement() {
                 return std::unexpected{res.error()};
 
             if (auto* tok = res->get_if<Identifier>())
-                col.index_name = tok->value;
-            else if (auto* tok = res->get_if<QuotedIdentifier>())
                 col.index_name = tok->value;
             else
                 return std::unexpected{ParseError::UnexpectedToken};
@@ -165,8 +160,6 @@ std::expected<SelectStatement, CompileError> Parser::select_statement() {
 
     if (auto* tok = res->get_if<Identifier>())
         stmt.table_name = tok->value;
-    else if (auto* tok = res->get_if<QuotedIdentifier>())
-        stmt.table_name = tok->value;
     else
         return std::unexpected{ParseError::UnexpectedToken};
 
@@ -198,8 +191,6 @@ std::expected<InsertStatement, CompileError> Parser::insert_statement() {
         return std::unexpected{res.error()};
 
     if (auto* tok = res->get_if<Identifier>())
-        stmt.table_name = tok->value;
-    else if (auto* tok = res->get_if<QuotedIdentifier>())
         stmt.table_name = tok->value;
     else
         return std::unexpected{ParseError::UnexpectedToken};
@@ -250,8 +241,6 @@ std::expected<DeleteStatement, CompileError> Parser::delete_statement() {
         return std::unexpected{res.error()};
 
     if (auto* tok = res->get_if<Identifier>())
-        stmt.table_name = tok->value;
-    else if (auto* tok = res->get_if<QuotedIdentifier>())
         stmt.table_name = tok->value;
     else
         return std::unexpected{ParseError::UnexpectedToken};
@@ -308,8 +297,6 @@ std::expected<Filter, CompileError> Parser::where_declaration() {
         return std::unexpected{res.error()};
 
     if (auto* tok = res->get_if<Identifier>())
-        filter.col_identifier = tok->value;
-    else if (auto* tok = res->get_if<QuotedIdentifier>())
         filter.col_identifier = tok->value;
     else
         return std::unexpected{ParseError::UnexpectedToken};

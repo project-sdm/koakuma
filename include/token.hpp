@@ -96,10 +96,6 @@ struct Identifier {
     std::string value;
 };
 
-struct QuotedIdentifier {
-    std::string value;
-};
-
 struct Eof {};
 
 class Token {
@@ -144,8 +140,7 @@ public:
     }
 
 private:
-    using token_type =
-        std::variant<Keyword, Symbol, DataType, Number, Literal, Identifier, QuotedIdentifier, Eof>;
+    using token_type = std::variant<Keyword, Symbol, DataType, Number, Literal, Identifier, Eof>;
     token_type variant;
     /* pos, line, ... */
 };
@@ -192,17 +187,6 @@ struct std::formatter<Identifier, char> {
 
     static auto format(Identifier identifier, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Identifier{{{}}}", identifier.value);
-    }
-};
-
-template<>
-struct std::formatter<QuotedIdentifier, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(QuotedIdentifier identifier, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "QuotedIdentifier{{{}}}", identifier.value);
     }
 };
 

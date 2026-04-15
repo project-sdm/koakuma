@@ -43,7 +43,8 @@ bool Parser::accept() {
 
     auto* tok = t->get_if<T>();
     if (tok && *tok == value) {
-        auto _ = tokens.next();
+        auto result = tokens.next();
+        assert(result.has_value());
         return true;
     }
 

@@ -11,7 +11,7 @@
 #include "token.hpp"
 
 namespace {
-    std::expected<Token, CompileError> gen_quoted_identifier(std::string_view lexeme) {
+    std::expected<Token, CompileError> gen_identifier_quoted(std::string_view lexeme) {
         lexeme.remove_prefix(1);
         lexeme.remove_suffix(1);
 
@@ -24,7 +24,7 @@ namespace {
         for (char c : lexeme)
             out.push_back(c);
 
-        return Token{QuotedIdentifier{std::move(out)}};
+        return Token{Identifier{std::move(out)}};
     }
 
     std::expected<Token, CompileError> gen_escaped_literal(std::string_view lexeme) {
@@ -222,7 +222,7 @@ namespace {
 
                 return Token{Identifier{std::move(lexeme)}};
             case 21:
-                return gen_quoted_identifier(lexeme);
+                return gen_identifier_quoted(lexeme);
             case 24:
                 return gen_escaped_literal(lexeme);
             default:
