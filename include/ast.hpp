@@ -186,11 +186,11 @@ struct std::formatter<Column, char> {
 
 template<>
 struct std::formatter<InsertValue, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(InsertValue value, std::format_context& ctx) const {
+    static auto format(InsertValue value, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "( ");
@@ -207,11 +207,11 @@ struct std::formatter<InsertValue, char> {
 
 template<>
 struct std::formatter<CreateStatement, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(CreateStatement stmt, std::format_context& ctx) const {
+    static auto format(CreateStatement stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "CREATE TABLE {} - COLUMNS:\n", stmt.table_name);
@@ -226,11 +226,11 @@ struct std::formatter<CreateStatement, char> {
 
 template<>
 struct std::formatter<SelectStatement, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(SelectStatement stmt, std::format_context& ctx) const {
+    static auto format(SelectStatement stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(ctx.out(), "SELECT FROM {} -  FILTER: ", stmt.table_name);
@@ -246,11 +246,11 @@ struct std::formatter<SelectStatement, char> {
 
 template<>
 struct std::formatter<InsertStatement, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(InsertStatement stmt, std::format_context& ctx) const {
+    static auto format(InsertStatement stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "INSERT INTO {} VALUES:\n", stmt.table_name);
@@ -265,11 +265,11 @@ struct std::formatter<InsertStatement, char> {
 
 template<>
 struct std::formatter<DeleteStatement, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(DeleteStatement stmt, std::format_context& ctx) const {
+    static auto format(DeleteStatement stmt, std::format_context& ctx) {
         return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
                               stmt.filter);
     }
@@ -277,11 +277,11 @@ struct std::formatter<DeleteStatement, char> {
 
 template<>
 struct std::formatter<Statement, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(Statement stmt, std::format_context& ctx) const {
+    static auto format(Statement stmt, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           stmt);
     }
@@ -289,11 +289,11 @@ struct std::formatter<Statement, char> {
 
 template<>
 struct std::formatter<SourceFile, char> {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(SourceFile src, std::format_context& ctx) const {
+    static auto format(SourceFile src, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "Source:\n");

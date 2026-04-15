@@ -11,7 +11,7 @@ class Parser {
 public:
     std::expected<SourceFile, std::vector<CompileError>> source_file();
 
-    Parser(std::string source);
+    explicit Parser(std::string source);
 
 private:
     template<auto>
@@ -43,7 +43,7 @@ bool Parser::accept() {
 
     auto* tok = t->get_if<T>();
     if (tok && *tok == value) {
-        tokens.next();
+        auto _ = tokens.next();
         return true;
     }
 
@@ -60,7 +60,11 @@ std::optional<CompileError> Parser::expect() {
 
     auto* tok = t->get_if<T>();
     if (tok && *tok == value) {
-        tokens.next();
+        auto result = tokens.next();
+
+        if (!result.has_value())
+            return result.error();
+
         return std::nullopt;
     }
 
