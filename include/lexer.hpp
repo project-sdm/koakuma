@@ -1,27 +1,24 @@
 #ifndef LEXER_HPP
 #define LEXER_HPP
 
-#include "error.hpp"
-#include "token.hpp"
 #include <expected>
 #include <optional>
 #include <string>
+#include "error.hpp"
+#include "token.hpp"
 
-class Lexer
-{
+class Lexer {
 public:
+    explicit Lexer(std::string);
 
-  explicit Lexer(std::string);
-
-  std::expected<Token, CompileError> next();
+    std::expected<Token, CompileError> next();
 
 private:
+    std::optional<char> peek();
+    void consume();
 
-  std::optional<char> peek();
-  void consume();
-
-  std::string source;
-  std::size_t pos = 0;
+    std::string source;
+    std::size_t pos = 0;
 };
 
 #endif
