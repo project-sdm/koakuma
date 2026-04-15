@@ -7,7 +7,17 @@ set(CMAKE_CXX_STANDARD_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
-add_executable(koakuma src/main.cpp)
+add_executable(koakuma
+  src/lexer.cpp
+  src/main.cpp
+  src/parser.cpp
+  src/peekable.cpp
+)
+
+target_include_directories(koakuma
+  PRIVATE external
+  PRIVATE include
+)
 
 if(MSVC)
     target_compile_options(koakuma PRIVATE /W4 /WX)

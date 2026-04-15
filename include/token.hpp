@@ -1,0 +1,287 @@
+#ifndef TOKEN_HPP
+#define TOKEN_HPP
+
+#include "magic_enum/magic_enum.hpp"
+#include "types.hpp"
+#include <format>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <variant>
+
+enum class Keyword
+{
+  All,
+  Analyze,
+  And,
+  As,
+  Between,
+  By,
+  Commit,
+  Create,
+  Database,
+  Delete,
+  Distinct,
+  Drop,
+  Explain,
+  False,
+  File,
+  Foreign,
+  From,
+  Group,
+  In,
+  Index,
+  Insert,
+  Into,
+  Join,
+  K,
+  Key,
+  Not,
+  Null,
+  On,
+  Or,
+  Order,
+  Point,
+  Primary,
+  Radius,
+  Rollback,
+  Select,
+  Set,
+  Start,
+  Table,
+  Text,
+  Transaction,
+  True,
+  Unique,
+  Update,
+  Values,
+  Where,
+};
+
+enum class Symbol
+{
+  Asterisk,
+  Comma,
+  Div,
+  Eq,
+  Geq,
+  Gt,
+  LParen,
+  Leq,
+  Lt,
+  Neq,
+  Period,
+  Plus,
+  RParen,
+  SemiColon,
+  Sub,
+};
+
+enum class DataType
+{
+  Bool,
+  Date,
+  Int,
+  Real,
+  Text,
+  Uuid,
+  Varchar,
+};
+
+struct Number
+{
+  f64 value;
+};
+
+struct Literal
+{
+  std::string value;
+};
+
+struct Identifier
+{
+  std::string value;
+};
+
+struct QuotedIdentifier
+{
+  std::string value;
+};
+
+struct Eof
+{};
+
+class Token
+{
+public:
+
+  template <typename T>
+  Token(T value)
+  : variant{std::move(value)}
+  {}
+
+  template <typename T>
+  bool is() const
+  {
+    return std::holds_alternative<T>(this->variant);
+  }
+
+  template <typename T>
+  T& get()
+  {
+    return std::get<T>(this->variant);
+  }
+
+  template <typename T>
+  const T& get() const
+  {
+    return std::get<T>(this->variant);
+  }
+
+  template <typename T>
+  T* get_if()
+  {
+    return std::get_if<T>(&this->variant);
+  }
+
+  template <typename T>
+  const T* get_if() const
+  {
+    return std::get_if<T>(&this->variant);
+  }
+
+  template <typename F>
+  decltype(auto) visit(F&& f)
+  {
+    return std::visit(std::forward<F>(f), this->variant);
+  }
+
+  template <typename F>
+  decltype(auto) visit(F&& f) const
+  {
+    return std::visit(std::forward<F>(f), this->variant);
+  }
+
+private:
+
+  using token_type = std::variant<Keyword, Symbol, DataType, Number, Literal, Identifier, QuotedIdentifier, Eof>;
+  token_type variant;
+  /* pos, line, ... */
+};
+
+template <typename E>
+requires std::is_same_v<E, Keyword> || std::is_same_v<E, Symbol> || std::is_same_v<E, DataType>
+struct std::formatter<E, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(E value, std::format_context& ctx) const
+  {
+    return std::format_to(ctx.out(), "{}", magic_enum::enum_name(value));
+  }
+
+};
+
+template <>
+struct std::formatter<Number, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(Number number, std::format_context& ctx) const
+  {
+    return std::format_to(ctx.out(), "Number{{{}}}", number.value);
+  }
+
+};
+
+template <>
+struct std::formatter<Literal, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(Literal literal, std::format_context& ctx) const
+  {
+    return std::format_to(ctx.out(), "Literal{{{}}}", literal.value);
+  }
+
+};
+
+template <>
+struct std::formatter<Identifier, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(Identifier identifier, std::format_context& ctx) const
+  {
+    return std::format_to(ctx.out(), "Identifier{{{}}}", identifier.value);
+  }
+
+};
+
+template <>
+struct std::formatter<QuotedIdentifier, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(QuotedIdentifier identifier, std::format_context& ctx) const
+  {
+    return std::format_to(ctx.out(), "QuotedIdentifier{{{}}}", identifier.value);
+  }
+
+};
+
+template <>
+struct std::formatter<Eof, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(Eof, std::format_context& ctx) const
+  {
+    return std::format_to(ctx.out(), "Eof");
+  }
+
+};
+
+template <>
+struct std::formatter<Token, char>
+{
+
+  constexpr auto parse(std::format_parse_context& ctx)
+  {
+    return ctx.begin();
+  }
+
+  auto format(Token tok, std::format_context& ctx) const
+  {
+    return tok.visit([&](auto&& value) {
+      return std::format_to(ctx.out(), "{}", value);
+    });
+  }
+
+};
+
+#endif
