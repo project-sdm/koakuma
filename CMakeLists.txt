@@ -3,11 +3,12 @@ project(koakuma LANGUAGES CXX VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED 23)
-set(CMAKE_CXX_STANDARD_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 add_executable(koakuma
+  src/ast.cpp
   src/lexer.cpp
   src/main.cpp
   src/parser.cpp
@@ -19,9 +20,4 @@ target_include_directories(koakuma
   PRIVATE include
 )
 
-if(MSVC)
-    target_compile_options(koakuma PRIVATE /W4 /WX)
-else()
-    target_compile_options(koakuma PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
-
+target_compile_options(koakuma PRIVATE -Wall -Wextra -Werror)

@@ -21,29 +21,29 @@ struct EqFilter {
 struct RangeFilter {
     f64 min_val;
     f64 max_val;
+
+    RangeFilter(f64 min_val, f64 max_val);
 };
 
 struct Point2D {
     f64 x;
     f64 y;
+
+    Point2D(f64 x, f64 y);
 };
 
 struct RadFilter {
     Point2D origin;
     f64 radius;
 
-    RadFilter(Point2D origin, f64 radius)
-        : origin(origin),
-          radius(radius) {}
+    RadFilter(Point2D origin, f64 radius);
 };
 
 struct KFilter {
     Point2D origin;
     f64 k;
 
-    KFilter(Point2D origin, f64 k)
-        : origin(origin),
-          k(k) {}
+    KFilter(Point2D origin, f64 k);
 };
 
 using FilterData = std::variant<EqFilter, RangeFilter, RadFilter, KFilter>;

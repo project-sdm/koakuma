@@ -2,10 +2,12 @@
 #define PARSER_HPP
 
 #include <expected>
+#include <optional>
 #include <vector>
 #include "ast.hpp"
 #include "error.hpp"
 #include "peekable.hpp"
+#include "util.hpp"
 
 class Parser {
 public:
@@ -15,10 +17,16 @@ public:
 
 private:
     template<auto>
-    bool accept();
+    std::expected<bool, CompileError> accept_val();
+
+    template<typename T>
+    std::expected<std::optional<T>, CompileError> accept_var();
 
     template<auto>
-    std::optional<CompileError> expect();
+    std::expected<void, CompileError> expect_val();
+
+    template<typename T>
+    std::expected<T, CompileError> expect_var();
 
     std::expected<Statement, CompileError> statement();
 
@@ -34,14 +42,12 @@ private:
 };
 
 template<auto value>
-bool Parser::accept() {
+std::expected<bool, CompileError> Parser::accept_val() {
     using T = decltype(value);
 
-    auto t = tokens.peek();
-    if (!t.has_value())
-        return false;
+    auto t = TRY(tokens.peek());
+    auto* tok = t.get_if<T>();
 
-    auto* tok = t->get_if<T>();
     if (tok && *tok == value) {
         auto result = tokens.next();
         assert(result.has_value());
@@ -51,25 +57,41 @@ bool Parser::accept() {
     return false;
 }
 
-template<auto value>
-std::optional<CompileError> Parser::expect() {
-    using T = decltype(value);
+template<typename T>
+std::expected<std::optional<T>, CompileError> Parser::accept_var() {
+    auto t = TRY(tokens.peek());
 
-    auto t = tokens.peek();
-    if (!t.has_value())
-        return t.error();
-
-    auto* tok = t->get_if<T>();
-    if (tok && *tok == value) {
+    if (auto* tok = t.get_if<T>()) {
         auto result = tokens.next();
-
-        if (!result.has_value())
-            return result.error();
-
-        return std::nullopt;
+        assert(result.has_value());
+        return *tok;
     }
 
-    return ParseError::UnexpectedToken;
+    return std::nullopt;
+}
+
+template<auto value>
+std::expected<void, CompileError> Parser::expect_val() {
+    using T = decltype(value);
+
+    auto tok = TRY(expect_var<T>());
+    if (tok != value)
+        return std::unexpected{ParseError::UnexpectedToken};
+
+    return {};
+}
+
+template<typename T>
+std::expected<T, CompileError> Parser::expect_var() {
+    auto t = TRY(tokens.peek());
+
+    if (auto* tok = t.get_if<T>()) {
+        auto result = tokens.next();
+        assert(result.has_value());
+        return *tok;
+    }
+
+    return std::unexpected{ParseError::UnexpectedToken};
 }
 
 #endif

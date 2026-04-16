@@ -18,7 +18,7 @@ select * from users
 where other_important_value in (point(0, 0), k 727);
 
 insert into users values
-  ('some_id', 'some_name')
+  ('some_id', 'some_name'),
   ('other_id', 'other_name')
 ;
 
