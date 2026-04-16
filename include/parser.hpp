@@ -49,8 +49,8 @@ std::expected<bool, CompileError> Parser::accept_val() {
     auto* tok = t.get_if<T>();
 
     if (tok && *tok == value) {
-        auto result = tokens.next();
-        assert(result.has_value());
+        auto res = tokens.next();
+        assert(res.has_value());
         return true;
     }
 
@@ -62,8 +62,8 @@ std::expected<std::optional<T>, CompileError> Parser::accept_var() {
     auto t = TRY(tokens.peek());
 
     if (auto* tok = t.get_if<T>()) {
-        auto result = tokens.next();
-        assert(result.has_value());
+        auto res = tokens.next();
+        assert(res.has_value());
         return *tok;
     }
 
@@ -86,8 +86,8 @@ std::expected<T, CompileError> Parser::expect_var() {
     auto t = TRY(tokens.peek());
 
     if (auto* tok = t.get_if<T>()) {
-        auto result = tokens.next();
-        assert(result.has_value());
+        auto res = tokens.next();
+        assert(res.has_value());
         return *tok;
     }
 

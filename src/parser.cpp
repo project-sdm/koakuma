@@ -22,8 +22,8 @@ std::expected<SourceFile, std::vector<CompileError>> Parser::source_file() {
         if (auto stmt = statement())
             statements.emplace_back(*stmt);
         else {
-            auto result = tokens.next();
-            assert(result.has_value());
+            auto res = tokens.next();
+            assert(res.has_value());
             auto err = stmt.error();
             errors.emplace_back(err);
 
@@ -180,11 +180,9 @@ std::expected<Filter, CompileError> Parser::where_declaration() {
     if (TRY(accept_val<Symbol::Eq>())) {
         EqFilter eqfilter;
 
-        auto res = TRY(tokens.next());
-
-        if (auto* tok = res.get_if<Literal>())
+        if (auto tok = TRY(accept_var<Literal>()))
             eqfilter.value = std::move(tok->value);
-        else if (auto* tok = res.get_if<Number>())
+        else if (auto tok = TRY(accept_var<Number>()))
             eqfilter.value = tok->value;
         else
             return std::unexpected{ParseError::UnexpectedToken};
