@@ -154,13 +154,8 @@ std::expected<InsertValue, CompileError> Parser::insert_value() {
     InsertValue value;
 
     do {
-        if (auto tok = TRY(accept_var<Literal>())) {
-            value.exprs.emplace_back(std::move(*tok));
-        } else if (auto tok = TRY(accept_var<Literal>())) {
-            value.exprs.emplace_back(std::move(*tok));
-        } else {
-            return std::unexpected{ParseError::UnexpectedToken};
-        }
+        auto tok = TRY(expect_var<Literal>());
+        value.exprs.emplace_back(std::move(tok));
     } while (TRY(accept_val<Symbol::Comma>()));
 
     return value;
