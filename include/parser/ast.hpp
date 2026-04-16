@@ -12,6 +12,8 @@ struct Column {
     std::string name;
     DataType type;
     std::optional<std::string> index_name;
+
+    Column(std::string name, DataType type);
 };
 
 struct EqFilter {
@@ -63,6 +65,8 @@ struct CreateStatement {
     std::string table_name;
     std::vector<Column> columns;
     std::optional<std::string> file_path = std::nullopt;
+
+    explicit CreateStatement(std::string table_name);
 };
 
 struct SelectStatement {

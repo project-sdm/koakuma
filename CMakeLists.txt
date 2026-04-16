@@ -8,11 +8,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 add_executable(koakuma
-  src/ast.cpp
-  src/lexer.cpp
   src/main.cpp
-  src/parser.cpp
-  src/peekable.cpp
+  src/parser/ast.cpp
+  src/parser/lexer.cpp
+  src/parser/parser.cpp
+  src/parser/peekable_lexer.cpp
 )
 
 target_include_directories(koakuma

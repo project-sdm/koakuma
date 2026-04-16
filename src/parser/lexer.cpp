@@ -1,4 +1,4 @@
-#include "lexer.hpp"
+#include "parser/lexer.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <expected>
@@ -6,9 +6,9 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
-#include "error.hpp"
 #include "magic_enum/magic_enum.hpp"
-#include "token.hpp"
+#include "parser/error.hpp"
+#include "parser/token.hpp"
 
 namespace {
     std::expected<Token, CompileError> gen_identifier_quoted(std::string_view lexeme) {

@@ -1,17 +1,18 @@
-#ifndef PEEKABLE_HPP
-#define PEEKABLE_HPP
+#ifndef PEEKABLE_LEXER_HPP
+#define PEEKABLE_LEXER_HPP
 
 #include <expected>
+#include <functional>
 #include <optional>
 #include <string>
 #include "lexer.hpp"
 #include "token.hpp"
 
-class Peekable {
+class PeekableLexer {
 public:
-    explicit Peekable(std::string);
+    explicit PeekableLexer(std::string);
 
-    std::expected<Token, CompileError> peek();
+    std::expected<std::reference_wrapper<Token>, CompileError> peek();
     std::expected<Token, CompileError> next();
 
 private:

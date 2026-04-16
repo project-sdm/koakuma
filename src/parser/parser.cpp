@@ -1,4 +1,4 @@
-#include "parser.hpp"
+#include "parser/parser.hpp"
 #include <cassert>
 #include "util.hpp"
 
@@ -16,7 +16,9 @@ std::expected<SourceFile, std::vector<CompileError>> Parser::source_file() {
             break;
         }
 
-        if (res->is<Eof>())
+        auto tok = res->get();
+
+        if (tok.is<Eof>())
             break;
 
         if (auto stmt = statement())
@@ -24,6 +26,7 @@ std::expected<SourceFile, std::vector<CompileError>> Parser::source_file() {
         else {
             auto res = tokens.next();
             assert(res.has_value());
+
             auto err = stmt.error();
             errors.emplace_back(err);
 
@@ -39,7 +42,7 @@ std::expected<SourceFile, std::vector<CompileError>> Parser::source_file() {
 }
 
 std::expected<Statement, CompileError> Parser::statement() {
-    auto res = TRY(tokens.peek());
+    auto res = TRY(tokens.peek()).get();
 
     if (auto* tok = res.get_if<Keyword>()) {
         switch (*tok) {
@@ -60,41 +63,34 @@ std::expected<Statement, CompileError> Parser::statement() {
 }
 
 std::expected<CreateStatement, CompileError> Parser::create_statement() {
-    CreateStatement stmt;
-
     TRYV(expect_val<Keyword::Create>());
     TRYV(expect_val<Keyword::Table>());
-
-    auto tok = TRY(expect_var<Identifier>());
-    stmt.table_name = tok.value;
-
+    auto tbl_name_tok = TRY(expect_var<Identifier>());
     TRYV(expect_val<Symbol::LParen>());
 
-    while (true) {
-        Column col{};
+    CreateStatement stmt{tbl_name_tok.value};
 
-        auto tok = TRY(expect_var<Identifier>());
-        col.name = tok.value;
-        col.type = TRY(expect_var<DataType>());
+    do {
+        auto tbl_tok = TRY(expect_var<Identifier>());
+        auto type_tok = TRY(expect_var<DataType>());
+
+        Column col{tbl_tok.value, type_tok};
 
         if (TRY(accept_val<Keyword::Index>())) {
-            auto tok = TRY(expect_var<Identifier>());
-            col.index_name = tok.value;
+            auto iden_tok = TRY(expect_var<Identifier>());
+            col.index_name = iden_tok.value;
         }
 
         stmt.columns.emplace_back(std::move(col));
-
-        if (!TRY(accept_val<Symbol::Comma>()))
-            break;
-    }
+    } while (TRY(accept_val<Symbol::Comma>()));
 
     TRYV(expect_val<Symbol::RParen>());
 
     if (TRY(accept_val<Keyword::From>())) {
         TRYV(expect_val<Keyword::File>());
 
-        auto tok = TRY(expect_var<Literal>());
-        stmt.file_path = tok.value;
+        auto file_tok = TRY(expect_var<Literal>());
+        stmt.file_path = file_tok.value;
     }
 
     TRYV(expect_val<Symbol::SemiColon>());
@@ -102,13 +98,12 @@ std::expected<CreateStatement, CompileError> Parser::create_statement() {
 }
 
 std::expected<SelectStatement, CompileError> Parser::select_statement() {
-    SelectStatement stmt;
-
     TRYV(expect_val<Keyword::Select>());
     TRYV(expect_val<Symbol::Asterisk>());
     TRYV(expect_val<Keyword::From>());
-
     auto iden_tok = TRY(expect_var<Identifier>());
+
+    SelectStatement stmt{};
     stmt.table_name = iden_tok.value;
 
     if (TRY(accept_val<Keyword::Where>()))

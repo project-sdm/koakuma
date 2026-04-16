@@ -1,7 +1,7 @@
 #include <fstream>
 #include <print>
 #include <system_error>
-#include "parser.hpp"
+#include "parser/parser.hpp"
 
 int main() {
     std::ifstream file{"./data/test.sql"};
