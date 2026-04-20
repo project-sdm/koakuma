@@ -9,7 +9,7 @@ std::size_t cross::get_page_size() {
     return sysconf(_SC_PAGESIZE);
 }
 
-#else
+#elif __has_include(<windows.h>)
 
 #include <windows.h>
 
@@ -19,4 +19,6 @@ long cross::get_page_size() {
     return sysInfo.dwPageSize;
 }
 
+#else
+#error "Could not find way to get system page size."
 #endif
