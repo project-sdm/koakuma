@@ -21,3 +21,8 @@ target_include_directories(koakuma
 )
 
 target_compile_options(koakuma PRIVATE -Wall -Wextra -Werror)
+
+include(GNUInstallDirs)
+
+install(TARGETS koakuma
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
