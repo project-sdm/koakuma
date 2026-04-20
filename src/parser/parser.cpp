@@ -5,38 +5,11 @@
 Parser::Parser(std::string source)
     : tokens{std::move(source)} {}
 
-std::expected<SourceFile, std::vector<CompileError>> Parser::source_file() {
+std::expected<SourceFile, CompileError> Parser::source_file() {
     std::vector<Statement> statements;
-    std::vector<CompileError> errors;
 
-    while (true) {
-        auto res = tokens.peek();
-        if (!res.has_value()) {
-            errors.emplace_back(res.error());
-            break;
-        }
-
-        auto tok = res->get();
-
-        if (tok.is<Eof>())
-            break;
-
-        if (auto stmt = statement())
-            statements.emplace_back(*stmt);
-        else {
-            auto res = tokens.next();
-            assert(res.has_value());
-
-            auto err = stmt.error();
-            errors.emplace_back(err);
-
-            if (std::holds_alternative<LexicalError>(err))
-                break;
-        }
-    }
-
-    if (!errors.empty())
-        return std::unexpected{errors};
+    while (!TRY(accept_var<Eof>()))
+        statements.emplace_back(TRY(statement()));
 
     return SourceFile{statements};
 }
