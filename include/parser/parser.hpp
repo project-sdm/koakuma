@@ -3,7 +3,6 @@
 
 #include <expected>
 #include <optional>
-#include <vector>
 #include "ast.hpp"
 #include "error.hpp"
 #include "peekable_lexer.hpp"
@@ -11,7 +10,7 @@
 
 class Parser {
 public:
-    std::expected<SourceFile, std::vector<CompileError>> source_file();
+    std::expected<SourceFile, CompileError> source_file();
 
     explicit Parser(std::string source);
 
