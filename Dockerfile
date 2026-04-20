@@ -1,6 +1,6 @@
 FROM gcc:15.2.0-trixie AS builder
 
-RUN apt install cmake
+RUN apt-get update && apt-get install cmake -y
 
 WORKDIR /app
 COPY . .
