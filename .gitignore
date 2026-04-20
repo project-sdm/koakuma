@@ -1,5 +1,6 @@
 build/
 .cache/
+/result
 
 CMakeLists.txt.user
 CMakeCache.txt
