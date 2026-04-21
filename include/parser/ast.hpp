@@ -8,10 +8,17 @@
 #include <vector>
 #include "token.hpp"
 
+struct PrimaryKey {};
+struct Index {
+    std::string name;
+};
+
+using Constraint = std::variant<PrimaryKey, Index>;
+
 struct Column {
     std::string name;
     DataType type;
-    std::optional<std::string> index_name;
+    std::optional<Constraint> constraint;
 
     Column(std::string name, DataType type);
 };
@@ -178,14 +185,62 @@ struct std::formatter<Expr, char> {
 };
 
 template<>
+struct std::formatter<PrimaryKey, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format([[maybe_unused]] PrimaryKey pkey, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "PRIMARY KEY");
+    }
+};
+
+template<>
+struct std::formatter<Index, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(Index index, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "INDEX {}", index.name);
+    }
+};
+
+template<>
+struct std::formatter<Constraint, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(Constraint constraint, std::format_context& ctx) {
+        return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
+                          constraint);
+    }
+};
+
+template<typename T>
+struct std::formatter<std::optional<T>, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(std::optional<T> opt, std::format_context& ctx) {
+        if (!opt)
+            return std::format_to(ctx.out(), "none");
+
+        return std::format_to(ctx.out(), "{}", *opt);
+    }
+};
+
+template<>
 struct std::formatter<Column, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
     static auto format(Column col, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Column: {} - {} - INDEX: {}", col.name, col.type,
-                              col.index_name ? *col.index_name : "nullopt");
+        return std::format_to(ctx.out(), "Column: {} - {} - CONSTRAINT: {}", col.name, col.type,
+                              col.constraint);
     }
 };
 

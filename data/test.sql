@@ -2,7 +2,7 @@ create table "users" (
   id uuid index btree_idx,
   name varchar,
   age int,
-  birth_date date,
+  birth_date date primary key,
   married bool
 ) from file 'some/path';
 

@@ -1,5 +1,7 @@
 #include "parser/parser.hpp"
 #include <cassert>
+#include "parser/ast.hpp"
+#include "parser/token.hpp"
 #include "util.hpp"
 
 Parser::Parser(std::string source)
@@ -51,7 +53,10 @@ std::expected<CreateStatement, CompileError> Parser::create_statement() {
 
         if (TRY(accept_val<Keyword::Index>())) {
             auto iden_tok = TRY(expect_var<Identifier>());
-            col.index_name = iden_tok.value;
+            col.constraint = Index{iden_tok.value};
+        } else if (TRY(accept_val<Keyword::Primary>())) {
+            TRYV(expect_val<Keyword::Key>());
+            col.constraint = PrimaryKey{};
         }
 
         stmt.columns.emplace_back(std::move(col));
