@@ -9,6 +9,7 @@
 #include "token.hpp"
 
 struct PrimaryKey {};
+
 struct Index {
     std::string name;
 };
@@ -226,7 +227,7 @@ struct std::formatter<std::optional<T>, char> {
 
     static auto format(std::optional<T> opt, std::format_context& ctx) {
         if (!opt)
-            return std::format_to(ctx.out(), "none");
+            return std::format_to(ctx.out(), "nullopt");
 
         return std::format_to(ctx.out(), "{}", *opt);
     }

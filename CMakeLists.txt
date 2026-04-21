@@ -24,7 +24,7 @@ target_include_directories(koakuma
   PRIVATE include
 )
 
-target_compile_options(koakuma PRIVATE -Wall -Wextra -Werror)
+target_compile_options(koakuma PRIVATE -Wall -Wextra)
 
 include(GNUInstallDirs)
 
