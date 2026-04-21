@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_executable(koakuma
   src/buffer_manager.cpp
   src/cross.cpp
+  src/pack.cpp
   src/file_manager.cpp
   src/main.cpp
   src/parser/ast.cpp
