@@ -7,18 +7,20 @@
 #include "error.hpp"
 #include "token.hpp"
 
-class Lexer {
-public:
-    explicit Lexer(std::string);
+namespace parser {
+    class Lexer {
+    public:
+        explicit Lexer(std::string);
 
-    std::expected<Token, CompileError> next();
+        std::expected<Token, CompileError> next();
 
-private:
-    std::optional<char> peek();
-    void consume();
+    private:
+        std::optional<char> peek();
+        void consume();
 
-    std::string source;
-    std::size_t pos = 0;
-};
+        std::string source;
+        std::size_t pos = 0;
+    };
+}  // namespace parser
 
 #endif

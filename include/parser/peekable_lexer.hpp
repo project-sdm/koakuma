@@ -8,16 +8,18 @@
 #include "lexer.hpp"
 #include "token.hpp"
 
-class PeekableLexer {
-public:
-    explicit PeekableLexer(std::string);
+namespace parser {
+    class PeekableLexer {
+    public:
+        explicit PeekableLexer(std::string);
 
-    std::expected<std::reference_wrapper<Token>, CompileError> peek();
-    std::expected<Token, CompileError> next();
+        std::expected<std::reference_wrapper<Token>, CompileError> peek();
+        std::expected<Token, CompileError> next();
 
-private:
-    Lexer lexer;
-    std::optional<Token> buf = std::nullopt;
-};
+    private:
+        Lexer lexer;
+        std::optional<Token> buf = std::nullopt;
+    };
+}  // namespace parser
 
 #endif

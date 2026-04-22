@@ -8,114 +8,119 @@
 #include <vector>
 #include "token.hpp"
 
-struct PrimaryKey {};
+namespace parser {
 
-struct Index {
-    std::string name;
-};
+    struct PrimaryKey {};
 
-using Constraint = std::variant<PrimaryKey, Index>;
+    struct Index {
+        std::string name;
+    };
 
-struct Column {
-    std::string name;
-    DataType type;
-    std::optional<Constraint> constraint;
+    using Constraint = std::variant<PrimaryKey, Index>;
 
-    Column(std::string name, DataType type);
-};
+    struct Column {
+        std::string name;
+        DataType type;
+        std::optional<Constraint> constraint;
 
-struct EqFilter {
-    std::variant<std::string, f64> value;
-};
+        Column(std::string name, DataType type);
+    };
 
-struct RangeFilter {
-    f64 min_val;
-    f64 max_val;
+    struct EqFilter {
+        std::variant<std::string, f64> value;
+    };
 
-    RangeFilter(f64 min_val, f64 max_val);
-};
+    struct RangeFilter {
+        f64 min_val;
+        f64 max_val;
 
-struct Point2D {
-    f64 x;
-    f64 y;
+        RangeFilter(f64 min_val, f64 max_val);
+    };
 
-    Point2D(f64 x, f64 y);
-};
+    struct Point2D {
+        f64 x;
+        f64 y;
 
-struct RadFilter {
-    Point2D origin;
-    f64 radius;
+        Point2D(f64 x, f64 y);
+    };
 
-    RadFilter(Point2D origin, f64 radius);
-};
+    struct RadFilter {
+        Point2D origin;
+        f64 radius;
 
-struct KFilter {
-    Point2D origin;
-    f64 k;
+        RadFilter(Point2D origin, f64 radius);
+    };
 
-    KFilter(Point2D origin, f64 k);
-};
+    struct KFilter {
+        Point2D origin;
+        f64 k;
 
-using FilterData = std::variant<EqFilter, RangeFilter, RadFilter, KFilter>;
+        KFilter(Point2D origin, f64 k);
+    };
 
-struct Filter {
-    std::string col_identifier;
-    FilterData data;
-};
+    using FilterData = std::variant<EqFilter, RangeFilter, RadFilter, KFilter>;
 
-using Expr = std::variant<Literal, Number>;
+    struct Filter {
+        std::string col_identifier;
+        FilterData data;
+    };
 
-struct InsertValue {
-    std::vector<Expr> exprs;
-};
+    using Expr = std::variant<Literal, Number>;
 
-struct CreateStatement {
-    std::string table_name;
-    std::vector<Column> columns;
-    std::optional<std::string> file_path = std::nullopt;
+    struct InsertValue {
+        std::vector<Expr> exprs;
+    };
 
-    explicit CreateStatement(std::string table_name);
-};
+    struct CreateStatement {
+        std::string table_name;
+        std::vector<Column> columns;
+        std::optional<std::string> file_path = std::nullopt;
 
-struct SelectStatement {
-    std::string table_name;
-    std::optional<Filter> filter = std::nullopt;
-};
+        explicit CreateStatement(std::string table_name);
+    };
 
-struct InsertStatement {
-    std::string table_name;
-    std::vector<InsertValue> values;
-};
+    struct SelectStatement {
+        std::string table_name;
+        std::optional<Filter> filter = std::nullopt;
+    };
 
-struct DeleteStatement {
-    std::string table_name;
-    std::optional<Filter> filter;
-};
+    struct InsertStatement {
+        std::string table_name;
+        std::vector<InsertValue> values;
+    };
 
-using Statement = std::variant<CreateStatement, SelectStatement, InsertStatement, DeleteStatement>;
+    struct DeleteStatement {
+        std::string table_name;
+        std::optional<Filter> filter;
+    };
 
-struct SourceFile {
-    std::vector<Statement> statements;
-};
+    using Statement =
+        std::variant<CreateStatement, SelectStatement, InsertStatement, DeleteStatement>;
+
+    struct SourceFile {
+        std::vector<Statement> statements;
+    };
+
+}  // namespace parser
 
 template<>
-struct std::formatter<Point2D, char> {
+struct std::formatter<parser::Point2D, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Point2D point, std::format_context& ctx) {
+    static auto format(parser::Point2D point, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Point2D({}, {})", point.x, point.y);
     }
 };
 
 template<>
-struct std::formatter<EqFilter, char> {
+struct std::formatter<parser::EqFilter, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(EqFilter filter, std::format_context& ctx) {
+    static auto format(parser::EqFilter filter, std::format_context& ctx) {
         return std::visit(
             [&](auto&& value) { return std::format_to(ctx.out(), "EqFilter: {}", value); },
             filter.value);
@@ -123,46 +128,46 @@ struct std::formatter<EqFilter, char> {
 };
 
 template<>
-struct std::formatter<RangeFilter, char> {
+struct std::formatter<parser::RangeFilter, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(RangeFilter filter, std::format_context& ctx) {
+    static auto format(parser::RangeFilter filter, std::format_context& ctx) {
         return std::format_to(ctx.out(), "RangeFilter: {} - {}", filter.min_val, filter.max_val);
     }
 };
 
 template<>
-struct std::formatter<RadFilter, char> {
+struct std::formatter<parser::RadFilter, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(RadFilter filter, std::format_context& ctx) {
+    static auto format(parser::RadFilter filter, std::format_context& ctx) {
         return std::format_to(ctx.out(), "RadFilter: origin {} - radius {}", filter.origin,
                               filter.radius);
     }
 };
 
 template<>
-struct std::formatter<KFilter, char> {
+struct std::formatter<parser::KFilter, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(KFilter filter, std::format_context& ctx) {
+    static auto format(parser::KFilter filter, std::format_context& ctx) {
         return std::format_to(ctx.out(), "KFilter: origin {} - k {}", filter.origin, filter.k);
     }
 };
 
 template<>
-struct std::formatter<Filter, char> {
+struct std::formatter<parser::Filter, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Filter filter, std::format_context& ctx) {
+    static auto format(parser::Filter filter, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "Filter: iden {} - ", filter.col_identifier);
@@ -174,46 +179,46 @@ struct std::formatter<Filter, char> {
 };
 
 template<>
-struct std::formatter<Expr, char> {
+struct std::formatter<parser::Expr, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Expr expr, std::format_context& ctx) {
+    static auto format(parser::Expr expr, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           expr);
     }
 };
 
 template<>
-struct std::formatter<PrimaryKey, char> {
+struct std::formatter<parser::PrimaryKey, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format([[maybe_unused]] PrimaryKey pkey, std::format_context& ctx) {
+    static auto format([[maybe_unused]] parser::PrimaryKey pkey, std::format_context& ctx) {
         return std::format_to(ctx.out(), "PRIMARY KEY");
     }
 };
 
 template<>
-struct std::formatter<Index, char> {
+struct std::formatter<parser::Index, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Index index, std::format_context& ctx) {
+    static auto format(parser::Index index, std::format_context& ctx) {
         return std::format_to(ctx.out(), "INDEX {}", index.name);
     }
 };
 
 template<>
-struct std::formatter<Constraint, char> {
+struct std::formatter<parser::Constraint, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Constraint constraint, std::format_context& ctx) {
+    static auto format(parser::Constraint constraint, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           constraint);
     }
@@ -234,24 +239,24 @@ struct std::formatter<std::optional<T>, char> {
 };
 
 template<>
-struct std::formatter<Column, char> {
+struct std::formatter<parser::Column, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Column col, std::format_context& ctx) {
+    static auto format(parser::Column col, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Column: {} - {} - CONSTRAINT: {}", col.name, col.type,
                               col.constraint);
     }
 };
 
 template<>
-struct std::formatter<InsertValue, char> {
+struct std::formatter<parser::InsertValue, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(InsertValue value, std::format_context& ctx) {
+    static auto format(parser::InsertValue value, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "( ");
@@ -267,12 +272,12 @@ struct std::formatter<InsertValue, char> {
 };
 
 template<>
-struct std::formatter<CreateStatement, char> {
+struct std::formatter<parser::CreateStatement, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(CreateStatement stmt, std::format_context& ctx) {
+    static auto format(parser::CreateStatement stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "CREATE TABLE {} - COLUMNS:\n", stmt.table_name);
@@ -286,12 +291,12 @@ struct std::formatter<CreateStatement, char> {
 };
 
 template<>
-struct std::formatter<SelectStatement, char> {
+struct std::formatter<parser::SelectStatement, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(SelectStatement stmt, std::format_context& ctx) {
+    static auto format(parser::SelectStatement stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(ctx.out(), "SELECT FROM {} -  FILTER: ", stmt.table_name);
@@ -306,12 +311,12 @@ struct std::formatter<SelectStatement, char> {
 };
 
 template<>
-struct std::formatter<InsertStatement, char> {
+struct std::formatter<parser::InsertStatement, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(InsertStatement stmt, std::format_context& ctx) {
+    static auto format(parser::InsertStatement stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "INSERT INTO {} VALUES:\n", stmt.table_name);
@@ -325,12 +330,12 @@ struct std::formatter<InsertStatement, char> {
 };
 
 template<>
-struct std::formatter<DeleteStatement, char> {
+struct std::formatter<parser::DeleteStatement, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(DeleteStatement stmt, std::format_context& ctx) {
+    static auto format(parser::DeleteStatement stmt, std::format_context& ctx) {
         if (stmt.filter) {
             return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
                                   *stmt.filter);
@@ -341,24 +346,24 @@ struct std::formatter<DeleteStatement, char> {
 };
 
 template<>
-struct std::formatter<Statement, char> {
+struct std::formatter<parser::Statement, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(Statement stmt, std::format_context& ctx) {
+    static auto format(parser::Statement stmt, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           stmt);
     }
 };
 
 template<>
-struct std::formatter<SourceFile, char> {
+struct std::formatter<parser::SourceFile, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    static auto format(SourceFile src, std::format_context& ctx) {
+    static auto format(parser::SourceFile src, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "Source:\n");

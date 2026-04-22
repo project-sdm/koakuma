@@ -243,61 +243,63 @@ namespace {
 
 }  // namespace
 
-Lexer::Lexer(std::string source)
-    : source{std::move(source)} {}
+namespace parser {
+    Lexer::Lexer(std::string source)
+        : source{std::move(source)} {}
 
-std::expected<Token, CompileError> Lexer::next() {
-    while (auto opt = peek()) {
-        if (!is_ignorable(*opt))
-            break;
+    std::expected<Token, CompileError> Lexer::next() {
+        while (auto opt = peek()) {
+            if (!is_ignorable(*opt))
+                break;
 
-        // TODO: re-add comment support
+            // TODO: re-add comment support
 
-        consume();
-    }
-
-    if (!peek())
-        return Token{Eof{}};
-
-    std::optional<state_t> accepting_state = std::nullopt;
-    std::size_t start = pos;
-    std::size_t last = pos;
-    state_t state = 0;
-
-    while (auto opt = peek()) {
-        auto chr = static_cast<unsigned char>(*opt);
-        state_t next = transition_table.at(state)[chr];
-        if (next == -1)
-            break;
-
-        state = next;
-        consume();
-
-        if (is_accepting(state)) {
-            accepting_state = state;
-            last = pos;
+            consume();
         }
+
+        if (!peek())
+            return Token{Eof{}};
+
+        std::optional<state_t> accepting_state = std::nullopt;
+        std::size_t start = pos;
+        std::size_t last = pos;
+        state_t state = 0;
+
+        while (auto opt = peek()) {
+            auto chr = static_cast<unsigned char>(*opt);
+            state_t next = transition_table.at(state)[chr];
+            if (next == -1)
+                break;
+
+            state = next;
+            consume();
+
+            if (is_accepting(state)) {
+                accepting_state = state;
+                last = pos;
+            }
+        }
+
+        if (state == 0)
+            consume();
+
+        if (!accepting_state.has_value())
+            return std::unexpected{unwrap_error(state)};
+
+        pos = last;
+
+        std::string lexeme = source.substr(start, last - start);
+        return tokenize(std::move(lexeme), *accepting_state);
     }
 
-    if (state == 0)
-        consume();
+    std::optional<char> Lexer::peek() {
+        if (pos >= source.size())
+            return std::nullopt;
 
-    if (!accepting_state.has_value())
-        return std::unexpected{unwrap_error(state)};
+        return source[pos];
+    }
 
-    pos = last;
-
-    std::string lexeme = source.substr(start, last - start);
-    return tokenize(std::move(lexeme), *accepting_state);
-}
-
-std::optional<char> Lexer::peek() {
-    if (pos >= source.size())
-        return std::nullopt;
-
-    return source[pos];
-}
-
-void Lexer::consume() {
-    ++pos;
-}
+    void Lexer::consume() {
+        ++pos;
+    }
+}  // namespace parser
