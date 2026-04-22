@@ -2,16 +2,19 @@
 #define FILE_MANAGER_HPP
 
 #include <cstddef>
+#include <cstring>
 #include <fstream>
 #include <functional>
+#include <print>
+#include <stdexcept>
 #include <vector>
-#include "cross.hpp"
+#include "pack.hpp"
 #include "types.hpp"
 
-static const std::size_t PAGE_SIZE = cross::get_page_size();
+static const std::size_t PAGE_SIZE = 1024;
 // static const std::size_t PAGE_SIZE = cross::get_page_size();
 
-using pnum_t = long;
+using pnum_t = u64;
 
 class FileId {
 private:
@@ -38,6 +41,7 @@ private:
     struct FileHeader {
         pnum_t page_capacity = 1;
         pnum_t first_free = 1;
+        bool user_head_init = false;
     };
 
     struct InactivePage {
@@ -52,7 +56,7 @@ private:
 
     [[nodiscard]] static constexpr long page_offset(pnum_t pnum);
 
-    std::fstream open_create(const std::string& filename);
+    static std::fstream open_create(const std::string& filename);
 
     [[nodiscard]] static bool read_page(std::fstream& file, pnum_t pnum, std::span<u8> data);
     static void write_page(std::fstream& file, pnum_t pnum, std::span<const u8> data);
@@ -76,6 +80,40 @@ public:
 
     [[nodiscard]] bool read_page(const FileId& fid, pnum_t pnum, std::span<u8> data);
     void write_page(const FileId& fid, pnum_t pnum, std::span<const u8> data);
+
+    template<typename UserHeader>
+    UserHeader read_user_header(const FileId& fid);
+
+    template<typename UserHeader>
+    void write_user_header(const FileId& fid, const UserHeader& usr_header);
 };
+
+template<typename UserHeader>
+UserHeader FileManager::read_user_header(const FileId& fid) {
+    auto& file = open_files.at(fid);
+    FileHeader header = read_file_header(file);
+
+    if (!header.user_head_init)
+        return UserHeader{};
+
+    // NOTE: this relies on read_file_header leaving `buf` with the first page.
+    return pack::unpack_alloc<UserHeader>(buf.data() + sizeof(FileHeader));
+}
+template<typename UserHeader>
+void FileManager::write_user_header(const FileId& fid, const UserHeader& usr_header) {
+    if (sizeof(FileHeader) + pack::pack_size<>(usr_header) > PAGE_SIZE)
+        throw std::runtime_error("user header is too large for a single page");
+
+    auto& file = open_files.at(fid);
+    FileHeader header = read_file_header(file);
+    header.user_head_init = true;
+
+    // NOTE: this also relies on read_file_header leaving `buf` with the first page.
+    std::memcpy(buf.data(), &header, sizeof(header));
+
+    u8* dest = buf.data() + sizeof(FileHeader);
+    pack::pack(usr_header, dest);
+    write_page(file, FILE_HEADER_PAGE, buf);
+}
 
 #endif

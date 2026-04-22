@@ -24,9 +24,6 @@ std::fstream FileManager::open_create(const std::string& filename) {
         file.open(filename, std::ios::out | std::ios::binary);
         file.close();
         file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
-
-        // initialize file header
-        write_file_header(file, FileHeader{});
     }
 
     return file;
@@ -34,8 +31,10 @@ std::fstream FileManager::open_create(const std::string& filename) {
 
 bool FileManager::read_page(std::fstream& file, pnum_t pnum, std::span<u8> data) {
     assert(data.size_bytes() == PAGE_SIZE);
+
     file.seekg(page_offset(pnum), std::ios::beg);
-    file.read(reinterpret_cast<char*>(data.data()), static_cast<pnum_t>(data.size_bytes()));
+    file.read(reinterpret_cast<char*>(data.data()),
+              static_cast<std::streamsize>(data.size_bytes()));
 
     if (!file.good()) {
         file.clear();
@@ -67,12 +66,16 @@ FileManager::FileHeader FileManager::read_file_header(std::fstream& file) {
 }
 
 void FileManager::write_file_header(std::fstream& file, const FileHeader& header) {
-    std::ranges::fill(buf, 0);
+    if (!read_page(file, FILE_HEADER_PAGE, buf))
+        std::ranges::fill(buf, 0);
+
     std::memcpy(buf.data(), &header, sizeof(header));
     write_page(file, FILE_HEADER_PAGE, buf);
 }
 
 FileManager::InactivePage FileManager::read_inactive_page(std::fstream& file, pnum_t pnum) {
+    assert(pnum != FILE_HEADER_PAGE);
+
     if (!read_page(file, pnum, buf))
         throw std::runtime_error("tried to read non-existing inactive page");
 
@@ -84,6 +87,8 @@ FileManager::InactivePage FileManager::read_inactive_page(std::fstream& file, pn
 void FileManager::write_inactive_page(std::fstream& file,
                                       pnum_t pnum,
                                       const InactivePage& inactive_page) {
+    assert(pnum != FILE_HEADER_PAGE);
+
     std::ranges::fill(buf, 0);
     std::memcpy(buf.data(), &inactive_page, sizeof(inactive_page));
     write_page(file, pnum, buf);
@@ -134,12 +139,15 @@ void FileManager::free_page(const FileId& fid, pnum_t pnum) {
 }
 
 bool FileManager::read_page(const FileId& fid, pnum_t pnum, std::span<u8> data) {
-    assert(data.size_bytes() == PAGE_SIZE);
+    assert(pnum != FILE_HEADER_PAGE);
+
     auto& file = open_files.at(fid);
     return read_page(file, pnum, data);
 }
 
 void FileManager::write_page(const FileId& fid, pnum_t pnum, std::span<const u8> data) {
+    assert(pnum != FILE_HEADER_PAGE);
+
     auto& file = open_files.at(fid);
     write_page(file, pnum, data);
 }

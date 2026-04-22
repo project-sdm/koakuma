@@ -13,6 +13,7 @@ add_executable(koakuma
   src/pack.cpp
   src/file_manager.cpp
   src/main.cpp
+  src/seq_file.cpp
   src/parser/ast.cpp
   src/parser/lexer.cpp
   src/parser/parser.cpp

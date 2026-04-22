@@ -3,12 +3,28 @@
 
 #include <cstddef>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <variant>
 #include <vector>
 #include "types.hpp"
 
 namespace pack {
+    namespace {
+        // https://stackoverflow.com/questions/60564132/default-constructing-an-stdvariant-from-index
+        template<class Variant, std::size_t I = 0>
+        Variant variant_from_index(std::size_t index) {
+            if constexpr (I >= std::variant_size_v<Variant>) {
+                throw std::runtime_error{"Variant index " + std::to_string(I + index) +
+                                         " out of bounds"};
+            } else {
+                return index == 0 ? Variant{std::in_place_index<I>}
+                                  : variant_from_index<Variant, I + 1>(index - 1);
+            }
+        }
+    }  // namespace
+
     template<typename T>
     std::size_t pack_size(const T& val);
 
@@ -19,12 +35,12 @@ namespace pack {
     void unpack(T& dest, const u8*& src);
 
     template<typename T>
-    class PackSize {
+    struct PackSize {
         [[nodiscard]] std::size_t operator()(const T& val) const;
     };
 
     template<typename T>
-    class Pack {
+    struct Pack {
         void operator()(const T& val, u8*& dest) const;
     };
 
@@ -69,10 +85,9 @@ namespace pack {
     template<>
     struct Pack<std::string> {
         void operator()(const std::string& str, u8*& dest) const {
-            std::size_t size = str.size();
-            pack<>(size, dest);
-            std::memcpy(dest, str.data(), size);
-            dest += size;
+            pack<>(str.size(), dest);
+            std::memcpy(dest, str.data(), str.size());
+            dest += str.size();
         }
     };
 
@@ -120,6 +135,35 @@ namespace pack {
 
             for (auto& dest_el : dest)
                 unpack<>(dest_el, src);
+        }
+    };
+
+    template<typename... T>
+    struct PackSize<std::variant<T...>> {
+        [[nodiscard]] std::size_t operator()(const std::variant<T...>& var) const {
+            std::size_t idx_size = pack_size<>(var.index());
+            std::size_t val_size = std::visit([&](auto&& val) { return pack_size<>(val); }, var);
+            return idx_size + val_size;
+        }
+    };
+
+    template<typename... T>
+    struct Pack<std::variant<T...>> {
+        void operator()(const std::variant<T...>& var, u8*& dest) const {
+            pack<>(var.index(), dest);
+            std::visit([&](auto&& val) { pack<>(val, dest); }, var);
+        }
+    };
+
+    template<typename... T>
+        requires(std::is_default_constructible_v<T> && ...)
+    struct Unpack<std::variant<T...>> {
+        void operator()(std::variant<T...>& dest, const u8*& src) const {
+            std::size_t index = 0;
+            unpack<>(index, src);
+
+            dest = variant_from_index<std::variant<T...>>(index);
+            std::visit([&](auto& val) { unpack<>(val, src); }, dest);
         }
     };
 

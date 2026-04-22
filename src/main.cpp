@@ -1,32 +1,43 @@
 #include <cassert>
-#include <cstddef>
 #include <fstream>
 #include <iterator>
 #include <print>
 #include <system_error>
+#include <utility>
+#include <vector>
 #include "buffer_manager.hpp"
 #include "file_manager.hpp"
 #include "parser/parser.hpp"
+#include "seq_file.hpp"
 
 int main() {
+    std::println(R"( _  __           _                          )");
+    std::println(R"(| |/ /___   __ _| | ___   _ _ __ ___   __ _ )");
+    std::println(R"(| ' // _ \ / _` | |/ / | | | '_ ` _ \ / _` |)");
+    std::println(R"(| . \ (_) | (_| |   <| |_| | | | | | | (_| |)");
+    std::println(R"(|_|\_\___/ \__,_|_|\_\\__,_|_| |_| |_|\__,_|)");
+    std::println();
     std::println("Page size: {}", PAGE_SIZE);
 
     FileManager file_mgr;
-    BufferManager<8> buf_mgr{file_mgr};
+    FileId fid = file_mgr.open("seq.bin");
 
-    auto fid = file_mgr.open("./data_1.bin");
+    BufferManager buf_mgr{file_mgr};
+    SeqFile seq_file(file_mgr, buf_mgr, fid);
 
-    auto pnum = file_mgr.alloc_page(fid);
+    std::vector<Column> columns = {
+        {"foo",    ColumnType::INT},
+        {"bar",   ColumnType::BOOL},
+        {"baz", ColumnType::STRING},
+    };
 
-    {
-        auto pg = buf_mgr.fetch_page(fid, pnum);
-        auto span = pg.data();
+    seq_file.init(std::move(columns), 0);
+    Row r1 = {42, true, "hello"};
+    auto rid = seq_file.insert(r1);
+    assert(rid);
 
-        for (std::size_t i = 0; i < PAGE_SIZE; ++i)
-            span[i] = pnum + i;
-    }
-
-    buf_mgr.flush_all();
+    auto r1_loaded = seq_file.read_row(*rid);
+    assert(r1 == r1_loaded);
 
     return 0;
 
@@ -39,7 +50,8 @@ int main() {
     std::string source{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
     file.close();
 
-    Parser parser{source};
+    parser::Parser parser{source};
+
     auto res = parser.source_file();
     if (!res.has_value())
         std::println("{}", res.error());
