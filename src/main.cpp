@@ -1,5 +1,4 @@
 #include <cassert>
-#include <coroutine>
 #include <cstddef>
 #include <fstream>
 #include <iterator>
