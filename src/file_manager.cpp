@@ -13,7 +13,7 @@ FileId::FileId(u64 value)
 bool FileId::operator==(const FileId& other) const = default;
 
 constexpr long FileManager::page_offset(pnum_t pnum) {
-    return PAGE_SIZE * pnum;
+    return static_cast<long>(PAGE_SIZE) * pnum;
 }
 
 std::fstream FileManager::open_create(const std::string& filename) {
