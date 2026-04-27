@@ -109,7 +109,7 @@ struct std::formatter<parser::Point2D, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Point2D point, std::format_context& ctx) {
+    static auto format(const parser::Point2D& point, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Point2D({}, {})", point.x, point.y);
     }
 };
@@ -120,7 +120,7 @@ struct std::formatter<parser::EqFilter, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::EqFilter filter, std::format_context& ctx) {
+    static auto format(const parser::EqFilter& filter, std::format_context& ctx) {
         return std::visit(
             [&](auto&& value) { return std::format_to(ctx.out(), "EqFilter: {}", value); },
             filter.value);
@@ -133,7 +133,7 @@ struct std::formatter<parser::RangeFilter, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::RangeFilter filter, std::format_context& ctx) {
+    static auto format(const parser::RangeFilter& filter, std::format_context& ctx) {
         return std::format_to(ctx.out(), "RangeFilter: {} - {}", filter.min_val, filter.max_val);
     }
 };
@@ -144,7 +144,7 @@ struct std::formatter<parser::RadFilter, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::RadFilter filter, std::format_context& ctx) {
+    static auto format(const parser::RadFilter& filter, std::format_context& ctx) {
         return std::format_to(ctx.out(), "RadFilter: origin {} - radius {}", filter.origin,
                               filter.radius);
     }
@@ -156,7 +156,7 @@ struct std::formatter<parser::KFilter, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::KFilter filter, std::format_context& ctx) {
+    static auto format(const parser::KFilter& filter, std::format_context& ctx) {
         return std::format_to(ctx.out(), "KFilter: origin {} - k {}", filter.origin, filter.k);
     }
 };
@@ -167,7 +167,7 @@ struct std::formatter<parser::Filter, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Filter filter, std::format_context& ctx) {
+    static auto format(const parser::Filter& filter, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "Filter: iden {} - ", filter.col_identifier);
@@ -184,7 +184,7 @@ struct std::formatter<parser::Expr, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Expr expr, std::format_context& ctx) {
+    static auto format(const parser::Expr& expr, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           expr);
     }
@@ -207,7 +207,7 @@ struct std::formatter<parser::Index, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Index index, std::format_context& ctx) {
+    static auto format(const parser::Index& index, std::format_context& ctx) {
         return std::format_to(ctx.out(), "INDEX {}", index.name);
     }
 };
@@ -218,7 +218,7 @@ struct std::formatter<parser::Constraint, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Constraint constraint, std::format_context& ctx) {
+    static auto format(const parser::Constraint& constraint, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           constraint);
     }
@@ -230,7 +230,7 @@ struct std::formatter<std::optional<T>, char> {
         return ctx.begin();
     }
 
-    static auto format(std::optional<T> opt, std::format_context& ctx) {
+    static auto format(const std::optional<T>& opt, std::format_context& ctx) {
         if (!opt)
             return std::format_to(ctx.out(), "nullopt");
 
@@ -244,7 +244,7 @@ struct std::formatter<parser::Column, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Column col, std::format_context& ctx) {
+    static auto format(const parser::Column& col, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Column: {} - {} - CONSTRAINT: {}", col.name, col.type,
                               col.constraint);
     }
@@ -256,12 +256,12 @@ struct std::formatter<parser::InsertValue, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::InsertValue value, std::format_context& ctx) {
+    static auto format(const parser::InsertValue& value, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "( ");
 
-        for (auto& expr : value.exprs) {
+        for (const auto& expr : value.exprs) {
             out = std::format_to(out, "{}, ", expr);
         }
 
@@ -277,11 +277,11 @@ struct std::formatter<parser::CreateStatement, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::CreateStatement stmt, std::format_context& ctx) {
+    static auto format(const parser::CreateStatement& stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "CREATE TABLE {} - COLUMNS:\n", stmt.table_name);
-        for (auto& col : stmt.columns) {
+        for (const auto& col : stmt.columns) {
             out = std::format_to(out, "{}\n", col);
         }
         out = std::format_to(out, "FROM FILE: {}", stmt.file_path ? *stmt.file_path : "nullopt");
@@ -296,7 +296,7 @@ struct std::formatter<parser::SelectStatement, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::SelectStatement stmt, std::format_context& ctx) {
+    static auto format(const parser::SelectStatement& stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(ctx.out(), "SELECT FROM {} -  FILTER: ", stmt.table_name);
@@ -316,11 +316,11 @@ struct std::formatter<parser::InsertStatement, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::InsertStatement stmt, std::format_context& ctx) {
+    static auto format(const parser::InsertStatement& stmt, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "INSERT INTO {} VALUES:\n", stmt.table_name);
-        for (auto& insert_val : stmt.values) {
+        for (const auto& insert_val : stmt.values) {
             out = std::format_to(out, "{}\n", insert_val);
         }
         out = std::format_to(out, "EndInsert");
@@ -335,7 +335,7 @@ struct std::formatter<parser::DeleteStatement, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::DeleteStatement stmt, std::format_context& ctx) {
+    static auto format(const parser::DeleteStatement& stmt, std::format_context& ctx) {
         if (stmt.filter) {
             return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
                                   *stmt.filter);
@@ -351,7 +351,7 @@ struct std::formatter<parser::Statement, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::Statement stmt, std::format_context& ctx) {
+    static auto format(const parser::Statement& stmt, std::format_context& ctx) {
         return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
                           stmt);
     }
@@ -363,11 +363,11 @@ struct std::formatter<parser::SourceFile, char> {
         return ctx.begin();
     }
 
-    static auto format(parser::SourceFile src, std::format_context& ctx) {
+    static auto format(const parser::SourceFile& src, std::format_context& ctx) {
         auto out = ctx.out();
 
         out = std::format_to(out, "Source:\n");
-        for (auto& stmt : src.statements) {
+        for (const auto& stmt : src.statements) {
             out = std::format_to(out, "{}\n", stmt);
         }
         out = std::format_to(out, "EndSource");
