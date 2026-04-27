@@ -8,16 +8,18 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 add_executable(koakuma
-  src/buffer_manager.cpp
+  src/catalog.cpp
   src/cross.cpp
-  src/pack.cpp
-  src/file_manager.cpp
+  src/engine/buffer_manager.cpp
+  src/engine/engine.cpp
+  src/engine/file_manager.cpp
   src/main.cpp
-  src/seq_file.cpp
+  src/pack.cpp
   src/parser/ast.cpp
   src/parser/lexer.cpp
   src/parser/parser.cpp
   src/parser/peekable_lexer.cpp
+  src/seq_file.cpp
 )
 
 target_include_directories(koakuma

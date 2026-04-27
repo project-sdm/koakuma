@@ -1,12 +1,11 @@
 #include <cassert>
-#include <fstream>
-#include <iterator>
+#include <format>
 #include <print>
-#include <system_error>
 #include <vector>
-#include "buffer_manager.hpp"
-#include "file_manager.hpp"
-#include "parser/parser.hpp"
+#include "catalog.hpp"
+#include "engine/buffer_manager.hpp"
+#include "engine/engine.hpp"
+#include "engine/file_manager.hpp"
 #include "seq_file.hpp"
 
 int main() {
@@ -19,10 +18,8 @@ int main() {
     std::println("Page size: {}", PAGE_SIZE);
 
     FileManager file_mgr;
-    FileId fid = file_mgr.open("seq.bin");
-
     BufferManager buf_mgr{file_mgr};
-    SeqFile seq_file(file_mgr, buf_mgr, fid);
+    Engine eng{};
 
     std::vector<Column> columns = {
         {"foo",    ColumnType::INT},
@@ -30,40 +27,21 @@ int main() {
         {"baz", ColumnType::STRING},
     };
 
-    // seq_file.init(std::move(columns), 0);
+    bool created = catalog::create_table(eng, "hello", std::move(columns), 0);
+    std::println("was table created: {}", created);
 
-    seq_file.insert({42, true, "hello"});
-    seq_file.insert({43, false, "goodbye"});
-    seq_file.insert({60, true, "foo"});
-    seq_file.insert({63, true, "bar"});
+    auto tbl = catalog::get_table(eng, "hello");
+    assert(tbl);
 
-    auto r1_loaded = seq_file.find_by_pkey(42);
-    assert(r1_loaded);
+    tbl->insert({42, true, "hello"});
+    tbl->insert({43, false, "goodbye"});
+    tbl->insert({60, true, "foo"});
+    tbl->insert({63, true, "bar"});
 
-    std::println("{}", r1_loaded);
-    std::println();
-
-    auto cursor = seq_file.cursor();
+    auto cursor = tbl->cursor();
 
     while (auto row = cursor.next())
-        std::println("{}", row);
+        std::println("{}", *row);
 
     return 0;
-
-    std::ifstream file{"./data/test.sql"};
-    if (!file.is_open()) {
-        std::println("{}", std::make_error_code(std::errc(errno)).message());
-        return EXIT_FAILURE;
-    }
-
-    std::string source{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    file.close();
-
-    parser::Parser parser{source};
-
-    auto res = parser.source_file();
-    if (!res.has_value())
-        std::println("{}", res.error());
-    else
-        std::println("{}", res.value());
 }

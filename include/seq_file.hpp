@@ -8,8 +8,9 @@
 #include <string>
 #include <variant>
 #include <vector>
-#include "buffer_manager.hpp"
-#include "file_manager.hpp"
+#include "engine/buffer_manager.hpp"
+#include "engine/engine.hpp"
+#include "engine/file_manager.hpp"
 #include "pack.hpp"
 #include "types.hpp"
 
@@ -119,9 +120,7 @@ private:
         Slot(u32 pos, u32 len, bool active);
     };
 
-    FileManager& file_mgr;
-    BufferManager& buf_mgr;
-
+    Engine& eng;
     FileId fid;
 
     [[nodiscard]] static u32 slot_offset(u32 slot_idx);
@@ -156,9 +155,18 @@ public:
         std::optional<Row> next();
     };
 
-    explicit SeqFile(FileManager& file_mgr, BufferManager& buf_mgr, FileId fid);
+    explicit SeqFile(Engine& engine, FileId fid);
 
     void init(std::vector<Column> columns, u32 pkey_col);
+
+    struct Meta {
+        std::vector<Column> columns;
+        std::size_t pkey_col;
+
+        Meta(std::vector<Column> columns, std::size_t pkey_col);
+    };
+
+    [[nodiscard]] Meta read_meta();
 
     [[nodiscard]] Row read_row(Rid rid);
 

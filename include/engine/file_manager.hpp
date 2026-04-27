@@ -3,9 +3,10 @@
 
 #include <cstddef>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
-#include <print>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 #include "pack.hpp"
@@ -18,9 +19,10 @@ using pnum_t = u64;
 
 class FileId {
 private:
-    u64 id;
+    u64 id{};
 
 public:
+    FileId();
     explicit FileId(u64 value);
 
     [[nodiscard]] bool operator==(const FileId& other) const;
@@ -56,7 +58,8 @@ private:
 
     [[nodiscard]] static constexpr long page_offset(pnum_t pnum);
 
-    static std::fstream open_create(const std::string& filename);
+    static std::optional<std::fstream> open_inner(const std::filesystem::path& filename);
+    static std::fstream open_create_inner(const std::filesystem::path& filename);
 
     [[nodiscard]] static bool read_page(std::fstream& file, pnum_t pnum, std::span<u8> data);
     static void write_page(std::fstream& file, pnum_t pnum, std::span<const u8> data);
@@ -72,8 +75,11 @@ private:
 public:
     // NOTE: we might want to return a FileGuard or something similar.
     // It depends on how long-lived files will be in practice.
-    [[nodiscard]] FileId open(const std::string& filename);
+    [[nodiscard]] FileId open_create(const std::filesystem::path& filename);
+    [[nodiscard]] std::optional<FileId> open(const std::filesystem::path& filename);
     void close(const FileId& fid);
+
+    [[nodiscard]] static bool exists(const std::filesystem::path& filename);
 
     [[nodiscard]] pnum_t alloc_page(const FileId& fid);
     void free_page(const FileId& fid, pnum_t pnum);

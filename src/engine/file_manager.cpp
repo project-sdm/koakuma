@@ -1,11 +1,15 @@
-#include "file_manager.hpp"
+#include "engine/file_manager.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include "types.hpp"
+#include "util.hpp"
+
+FileId::FileId() = default;
 
 FileId::FileId(u64 value)
     : id{value} {}
@@ -13,10 +17,19 @@ FileId::FileId(u64 value)
 bool FileId::operator==(const FileId& other) const = default;
 
 constexpr long FileManager::page_offset(pnum_t pnum) {
-    return static_cast<long>(PAGE_SIZE) * pnum;
+    return static_cast<long>(PAGE_SIZE * pnum);
 }
 
-std::fstream FileManager::open_create(const std::string& filename) {
+std::optional<std::fstream> FileManager::open_inner(const std::filesystem::path& filename) {
+    std::fstream file{filename, std::ios::in | std::ios::out | std::ios::binary};
+
+    if (!file.is_open())
+        return std::nullopt;
+
+    return file;
+}
+
+std::fstream FileManager::open_create_inner(const std::filesystem::path& filename) {
     std::fstream file{filename, std::ios::in | std::ios::out | std::ios::binary};
 
     // create if not existing
@@ -89,14 +102,21 @@ void FileManager::write_inactive_page(std::fstream& file,
                                       const InactivePage& inactive_page) {
     assert(pnum != FILE_HEADER_PAGE);
 
-    std::ranges::fill(buf, 0);
+    std::ranges::fill(buf, 0);  // for security
     std::memcpy(buf.data(), &inactive_page, sizeof(inactive_page));
     write_page(file, pnum, buf);
 }
 
-FileId FileManager::open(const std::string& filename) {
+std::optional<FileId> FileManager::open(const std::filesystem::path& filename) {
+    std::fstream file = TRY_OPT(open_inner(filename));
     FileId fid{gen_id()};
-    open_files.emplace(fid, open_create(filename));
+    open_files.emplace(fid, std::move(file));
+    return fid;
+}
+
+FileId FileManager::open_create(const std::filesystem::path& filename) {
+    FileId fid{gen_id()};
+    open_files.emplace(fid, open_create_inner(filename));
     return fid;
 }
 
@@ -150,4 +170,8 @@ void FileManager::write_page(const FileId& fid, pnum_t pnum, std::span<const u8>
 
     auto& file = open_files.at(fid);
     write_page(file, pnum, data);
+}
+
+bool FileManager::exists(const std::filesystem::path& filename) {
+    return std::filesystem::exists(filename);
 }

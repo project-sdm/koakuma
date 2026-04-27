@@ -1,9 +1,11 @@
-#include "buffer_manager.hpp"
+#include "engine/buffer_manager.hpp"
 #include <cassert>
 #include <utility>
-#include "file_manager.hpp"
+#include "engine/file_manager.hpp"
 
 using PageGuard = BufferManager::PageGuard;
+
+PageId::PageId() = default;
 
 PageId::PageId(FileId fid, pnum_t pnum)
     : fid{fid},
@@ -11,8 +13,11 @@ PageId::PageId(FileId fid, pnum_t pnum)
 
 bool PageId::operator==(const PageId& other) const = default;
 
-BufferManager::FrameMeta::FrameMeta(std::list<PageId>::iterator lru_it)
-    : lru_it{lru_it} {}
+BufferManager::FrameMeta::FrameMeta() = default;
+
+BufferManager::FrameMeta::FrameMeta(PageId pid, std::list<PageId>::iterator lru_it)
+    : pid{pid},
+      lru_it{lru_it} {}
 
 BufferManager::FrameMeta& PageGuard::meta() const {
     return mgr.frame_meta[*frame_num];
@@ -26,7 +31,7 @@ PageGuard::PageGuard(BufferManager& mgr, std::size_t frame_num)
 
 PageGuard::PageGuard(PageGuard&& other) noexcept
     : mgr{other.mgr} {
-    *this = std::move(other);
+    std::swap(frame_num, other.frame_num);
 }
 
 PageGuard::~PageGuard() {
@@ -70,6 +75,7 @@ void BufferManager::load_page(const PageId& pid, std::size_t frame_num) {
 void PageGuard::reset() {
     if (frame_num) {
         meta().pin_count -= 1;
+        mgr.flush_page(meta().pid);  // PERF: we could flush lazily instead of immediately
         frame_num.reset();
     }
 }
@@ -143,7 +149,7 @@ auto BufferManager::fetch_page(const FileId& fid, pnum_t pnum) -> PageGuard {
     std::size_t frame_num = obtain_free_frame();
     lru_list.push_front(pid);
     page_table.try_emplace(pid, frame_num);
-    frame_meta[frame_num] = FrameMeta{lru_list.begin()};
+    frame_meta[frame_num] = FrameMeta{pid, lru_list.begin()};
     load_page(pid, frame_num);
 
     return PageGuard{*this, frame_num};

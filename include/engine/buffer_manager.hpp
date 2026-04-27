@@ -10,8 +10,9 @@
 
 struct PageId {
     FileId fid;
-    pnum_t pnum;
+    pnum_t pnum{};
 
+    PageId();
     PageId(FileId fid, pnum_t pnum);
 
     [[nodiscard]] bool operator==(const PageId& other) const;
@@ -36,13 +37,13 @@ private:
     };
 
     struct FrameMeta {
+        PageId pid;
         std::size_t pin_count = 0;
         bool is_dirty = false;
         std::list<PageId>::iterator lru_it;
 
-        FrameMeta() = default;
-
-        explicit FrameMeta(std::list<PageId>::iterator lru_it);
+        FrameMeta();
+        explicit FrameMeta(PageId pid, std::list<PageId>::iterator lru_it);
     };
 
     FileManager& file_mgr;
@@ -93,7 +94,7 @@ public:
     explicit BufferManager(FileManager& file_mgr);
 
     BufferManager(const BufferManager&) = delete;
-    BufferManager(BufferManager&&) = delete;
+    BufferManager(BufferManager&&) = default;
 
     BufferManager& operator=(const BufferManager&) = delete;
     BufferManager& operator=(BufferManager&&) = delete;

@@ -3,8 +3,9 @@
 #include <optional>
 #include <print>
 #include <utility>
-#include "buffer_manager.hpp"
-#include "file_manager.hpp"
+#include "engine/buffer_manager.hpp"
+#include "engine/engine.hpp"
+#include "engine/file_manager.hpp"
 #include "pack.hpp"
 #include "util.hpp"
 
@@ -29,16 +30,15 @@ SeqHeader::SeqHeader(std::vector<Column> columns, u32 pkey_col)
     : columns{std::move(columns)},
       pkey_col{pkey_col} {}
 
-SeqFile::SeqFile(FileManager& file_mgr, BufferManager& buf_mgr, FileId fid)
-    : file_mgr{file_mgr},
-      buf_mgr{buf_mgr},
+SeqFile::SeqFile(Engine& engine, FileId fid)
+    : eng{engine},
       fid{fid} {}
 
 void SeqFile::init(std::vector<Column> columns, u32 pkey_col) {
     SeqHeader file_hdr{std::move(columns), pkey_col};
-    file_mgr.write_user_header(fid, file_hdr);
+    eng.file_mgr.write_user_header(fid, file_hdr);
 
-    auto aux_page = buf_mgr.fetch_page(fid, aux_pnum(file_hdr));
+    auto aux_page = eng.buf_mgr.fetch_page(fid, aux_pnum(file_hdr));
     util::span_write(aux_page.data(), 0, PageHeader{});
 }
 
@@ -64,14 +64,14 @@ Row SeqFile::read_row(const BufferManager::PageGuard& page, const Slot& slot) {
 }
 
 Row SeqFile::read_row(Rid rid) {
-    auto page = buf_mgr.fetch_page(fid, rid.pnum);
+    auto page = eng.buf_mgr.fetch_page(fid, rid.pnum);
     return read_row(page, rid.slot_idx);
 }
 
 std::optional<u32> SeqFile::find_slot_by_pkey_in_main_page(pnum_t pnum, const Value& pkey) {
-    auto file_hdr = file_mgr.read_user_header<SeqHeader>(fid);
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
 
-    auto page = buf_mgr.fetch_page(fid, pnum);
+    auto page = eng.buf_mgr.fetch_page(fid, pnum);
     auto page_hdr = util::span_read<PageHeader>(page.const_data(), 0);
 
     u32 low = 0;
@@ -95,7 +95,7 @@ std::optional<u32> SeqFile::find_slot_by_pkey_in_main_page(pnum_t pnum, const Va
 }
 
 std::optional<pnum_t> SeqFile::find_main_page_by_pkey(const Value& pkey) {
-    auto file_hdr = file_mgr.read_user_header<SeqHeader>(fid);
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
     assert(file_hdr.pkey_col < file_hdr.columns.size());
 
     pnum_t plow = 1;
@@ -105,7 +105,7 @@ std::optional<pnum_t> SeqFile::find_main_page_by_pkey(const Value& pkey) {
         pnum_t pmid = (plow + phigh) / 2;
         assert(pmid > 0);
 
-        auto page = buf_mgr.fetch_page(fid, pmid);
+        auto page = eng.buf_mgr.fetch_page(fid, pmid);
 
         auto fst_row = read_row(page, 0);
         if (pkey < fst_row[file_hdr.pkey_col]) {
@@ -140,8 +140,8 @@ pnum_t SeqFile::aux_pnum(const SeqHeader& file_hdr) {
 }
 
 std::optional<Rid> SeqFile::find_by_pkey_in_aux_page(const Value& pkey) {
-    auto file_hdr = file_mgr.read_user_header<SeqHeader>(fid);
-    auto page = buf_mgr.fetch_page(fid, aux_pnum(file_hdr));
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
+    auto page = eng.buf_mgr.fetch_page(fid, aux_pnum(file_hdr));
     auto page_hdr = util::span_read<PageHeader>(page.const_data(), 0);
 
     for (u32 i = 0; i < page_hdr.slot_cnt; ++i) {
@@ -164,7 +164,7 @@ std::optional<Rid> SeqFile::find_rid_by_pkey_in_all_pages(const Value& pkey) {
 std::optional<Row> SeqFile::find_by_pkey(const Value& pkey) {
     auto rid = TRY_OPT(find_rid_by_pkey_in_all_pages(pkey));
 
-    auto page = buf_mgr.fetch_page(fid, rid.pnum);
+    auto page = eng.buf_mgr.fetch_page(fid, rid.pnum);
     auto slot = util::span_read<Slot>(page.const_data(), slot_offset(rid.slot_idx));
 
     if (!slot.active)
@@ -174,11 +174,11 @@ std::optional<Row> SeqFile::find_by_pkey(const Value& pkey) {
 }
 
 std::optional<Rid> SeqFile::insert(const Row& row) {
-    auto file_hdr = file_mgr.read_user_header<SeqHeader>(fid);
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
     const Value& pkey = row[file_hdr.pkey_col];
 
     if (auto rid = find_rid_by_pkey_in_all_pages(pkey)) {
-        auto page = buf_mgr.fetch_page(fid, rid->pnum);
+        auto page = eng.buf_mgr.fetch_page(fid, rid->pnum);
         auto slot = read_slot(page, rid->slot_idx);
 
         if (slot.active)
@@ -190,10 +190,11 @@ std::optional<Rid> SeqFile::insert(const Row& row) {
 
 // assumes that `row`'s primary key is not already in the aux page
 Rid SeqFile::insert_into_aux(const Row& row) {
-    auto file_hdr = file_mgr.read_user_header<SeqHeader>(fid);
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
     pnum_t pnum = aux_pnum(file_hdr);
 
-    auto aux_page = buf_mgr.fetch_page(fid, pnum);
+    std::println("pnum: {}", pnum);
+    auto aux_page = eng.buf_mgr.fetch_page(fid, pnum);
     auto aux_hdr = util::span_read<PageHeader>(aux_page.const_data(), 0);
 
     u32 new_slot_idx = aux_hdr.slot_cnt;
@@ -233,7 +234,7 @@ std::optional<Row> Cursor::next() {
             return std::nullopt;
 
         if (!cur_page)
-            cur_page.emplace(seq_file.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
+            cur_page.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
 
         Slot slot = read_slot(*cur_page, cur_slot);
 
@@ -251,7 +252,7 @@ std::optional<Row> Cursor::next() {
             cur_page.reset();
             cur_slot = 0;
 
-            auto file_hdr = seq_file.file_mgr.read_user_header<SeqHeader>(seq_file.fid);
+            auto file_hdr = seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid);
 
             assert(cur_pnum <= aux_pnum(file_hdr));
 
@@ -268,7 +269,7 @@ std::optional<Row> Cursor::next() {
 
 std::optional<Rid> SeqFile::delete_by_pkey(const Value& pkey) {
     auto rid = TRY_OPT(find_rid_by_pkey_in_all_pages(pkey));
-    auto page = buf_mgr.fetch_page(fid, rid.pnum);
+    auto page = eng.buf_mgr.fetch_page(fid, rid.pnum);
     auto slot = read_slot(page, rid.slot_idx);
 
     if (!slot.active)
@@ -278,4 +279,12 @@ std::optional<Rid> SeqFile::delete_by_pkey(const Value& pkey) {
     write_slot(page, rid.slot_idx, slot);
 
     return rid;
+}
+SeqFile::Meta::Meta(std::vector<Column> columns, std::size_t pkey_col)
+    : columns{std::move(columns)},
+      pkey_col{pkey_col} {}
+
+SeqFile::Meta SeqFile::read_meta() {
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
+    return Meta{file_hdr.columns, file_hdr.pkey_col};
 }
