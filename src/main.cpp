@@ -3,7 +3,6 @@
 #include <iterator>
 #include <print>
 #include <system_error>
-#include <utility>
 #include <vector>
 #include "buffer_manager.hpp"
 #include "file_manager.hpp"
@@ -31,13 +30,23 @@ int main() {
         {"baz", ColumnType::STRING},
     };
 
-    seq_file.init(std::move(columns), 0);
-    Row r1 = {42, true, "hello"};
-    auto rid = seq_file.insert(r1);
-    assert(rid);
+    // seq_file.init(std::move(columns), 0);
 
-    auto r1_loaded = seq_file.read_row(*rid);
-    assert(r1 == r1_loaded);
+    seq_file.insert({42, true, "hello"});
+    seq_file.insert({43, false, "goodbye"});
+    seq_file.insert({60, true, "foo"});
+    seq_file.insert({63, true, "bar"});
+
+    auto r1_loaded = seq_file.find_by_pkey(42);
+    assert(r1_loaded);
+
+    std::println("{}", r1_loaded);
+    std::println();
+
+    auto cursor = seq_file.cursor();
+
+    while (auto row = cursor.next())
+        std::println("{}", row);
 
     return 0;
 

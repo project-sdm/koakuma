@@ -2,6 +2,8 @@
 #define SEQ_FILE_HPP
 
 #include <cstddef>
+#include <cstdio>
+#include <format>
 #include <optional>
 #include <string>
 #include <variant>
@@ -16,14 +18,17 @@ struct Rid {
     u32 slot_idx;
 
     Rid() = delete;
-
     Rid(pnum_t pnum, u32 slot_idx);
+
+    bool operator==(const Rid& other) const;
+    bool operator<(const Rid& other) const;
 };
+
+static constexpr pnum_t PAGE_NIL = -1;
+static const Rid RID_NIL = Rid{PAGE_NIL, 0};
 
 using Value = std::variant<int, bool, std::string>;
 using Row = std::vector<Value>;
-
-// TODO: implement pack for Row
 
 enum class ColumnType : u8 {
     INT,
@@ -64,8 +69,6 @@ struct pack::Unpack<Column> {
         unpack<>(dest.is_unique, src);
     }
 };
-
-static constexpr pnum_t PAGE_NIL = -1;
 
 struct SeqHeader {
     std::vector<Column> columns;
@@ -113,7 +116,6 @@ private:
         u32 len;
         bool active;
 
-        Slot() = default;
         Slot(u32 pos, u32 len, bool active);
     };
 
@@ -125,35 +127,79 @@ private:
     [[nodiscard]] static u32 slot_offset(u32 slot_idx);
 
     [[nodiscard]] static Slot read_slot(const BufferManager::PageGuard& page, u32 slot_idx);
-    static void write_slot(const BufferManager::PageGuard& page, u32 slot_idx, const Slot& slot);
     [[nodiscard]] static Row read_row(const BufferManager::PageGuard& page, u32 slot_idx);
+    [[nodiscard]] static Row read_row(const BufferManager::PageGuard& page, const Slot& slot);
+    static void write_slot(const BufferManager::PageGuard& page, u32 slot_idx, const Slot& slot);
 
-    [[nodiscard]] std::optional<pnum_t> find_page_by_pkey(const Value& pkey);
+    [[nodiscard]] std::optional<pnum_t> find_main_page_by_pkey(const Value& pkey);
     [[nodiscard]] std::optional<Rid> find_by_pkey_in_main_pages(const Value& pkey);
-    [[nodiscard]] std::optional<u32> find_by_pkey_in_main_page(pnum_t pnum, const Value& pkey);
+    [[nodiscard]] std::optional<u32> find_slot_by_pkey_in_main_page(pnum_t pnum, const Value& pkey);
     [[nodiscard]] std::optional<Rid> find_by_pkey_in_aux_page(const Value& pkey);
-    [[nodiscard]] std::optional<Rid> find_rid_by_pkey(const Value& pkey);
+    [[nodiscard]] std::optional<Rid> find_rid_by_pkey_in_all_pages(const Value& pkey);
 
     Rid insert_into_aux(const Row& row);
 
     static pnum_t aux_pnum(const SeqHeader& file_hdr);
 
 public:
+    class Cursor {
+        SeqFile& seq_file;
+        std::optional<BufferManager::PageGuard> cur_page = std::nullopt;
+        u32 cur_slot = 0;
+        pnum_t cur_pnum = 1;
+
+        std::optional<Rid> next_slot();
+
+    public:
+        explicit Cursor(SeqFile& seq_file);
+
+        std::optional<Row> next();
+    };
+
     explicit SeqFile(FileManager& file_mgr, BufferManager& buf_mgr, FileId fid);
-
-    SeqFile(const SeqFile&) = delete;
-    SeqFile(SeqFile&&) = delete;
-
-    SeqFile& operator=(const SeqFile&) = delete;
-    SeqFile& operator=(SeqFile&&) = delete;
 
     void init(std::vector<Column> columns, u32 pkey_col);
 
     [[nodiscard]] Row read_row(Rid rid);
 
-    [[nodiscard]] std::optional<Row> find_by_pkey(const Value& pkey);
-
     std::optional<Rid> insert(const Row& row);
+    [[nodiscard]] std::optional<Row> find_by_pkey(const Value& pkey);
+    std::optional<Rid> delete_by_pkey(const Value& pkey);
+
+    Cursor cursor();
+};
+
+template<>
+struct std::formatter<Value, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const Value& val, std::format_context& ctx) {
+        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
+    }
+};
+
+template<>
+struct std::formatter<Row, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const Row& row, std::format_context& ctx) {
+        auto out = ctx.out();
+        std::format_to(out, "(");
+
+        if (!row.empty()) {
+            std::format_to(out, "{}", row[0]);
+
+            for (std::size_t i = 1; i < row.size(); ++i)
+                std::format_to(out, ", {}", row[i]);
+        }
+
+        std::format_to(out, ")");
+        return out;
+    }
 };
 
 #endif

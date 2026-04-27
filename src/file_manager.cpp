@@ -116,7 +116,7 @@ pnum_t FileManager::alloc_page(const FileId& fid) {
     pnum_t new_page = header.first_free;
 
     if (header.first_free == header.page_capacity) {
-        ++header.page_capacity;
+        header.page_capacity += 1;
         header.first_free = header.page_capacity;
     } else {
         auto free_page = read_inactive_page(file, header.first_free);

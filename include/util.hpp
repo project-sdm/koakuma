@@ -1,6 +1,8 @@
 #ifndef UTIL_HPP
 #define UTIL_HPP
 
+#include <array>
+#include <bit>
 #include <cstddef>
 #include <cstring>
 #include <expected>
@@ -40,15 +42,15 @@
 
 namespace util {
     template<typename T>
-        requires std::is_trivially_copyable_v<T> && std::is_default_constructible_v<T>
+        requires std::is_trivially_copyable_v<T>
     T span_read(std::span<const u8> data, std::size_t offset) {
-        T val;
-        std::memcpy(&val, data.subspan(offset).data(), sizeof(val));
-        return val;
+        std::array<u8, sizeof(T)> buf;
+        std::memcpy(buf.data(), data.subspan(offset).data(), sizeof(T));
+        return std::bit_cast<T>(buf);
     }
 
     template<typename T>
-        requires std::is_trivially_copyable_v<T> && std::is_default_constructible_v<T>
+        requires std::is_trivially_copyable_v<T>
     void span_write(std::span<u8> data, std::size_t offset, const T& value) {
         std::memcpy(data.subspan(offset).data(), &value, sizeof(value));
     }

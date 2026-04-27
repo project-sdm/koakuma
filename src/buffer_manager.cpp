@@ -1,7 +1,9 @@
 #include "buffer_manager.hpp"
 #include <cassert>
-#include <print>
+#include <utility>
 #include "file_manager.hpp"
+
+using PageGuard = BufferManager::PageGuard;
 
 PageId::PageId(FileId fid, pnum_t pnum)
     : fid{fid},
@@ -11,6 +13,47 @@ bool PageId::operator==(const PageId& other) const = default;
 
 BufferManager::FrameMeta::FrameMeta(std::list<PageId>::iterator lru_it)
     : lru_it{lru_it} {}
+
+BufferManager::FrameMeta& PageGuard::meta() const {
+    return mgr.frame_meta[*frame_num];
+}
+
+PageGuard::PageGuard(BufferManager& mgr, std::size_t frame_num)
+    : mgr{mgr},
+      frame_num{frame_num} {
+    meta().pin_count += 1;
+}
+
+PageGuard::PageGuard(PageGuard&& other) noexcept
+    : mgr{other.mgr} {
+    *this = std::move(other);
+}
+
+PageGuard::~PageGuard() {
+    reset();
+}
+
+PageGuard& PageGuard::operator=(PageGuard&& other) noexcept {
+    if (this != &other) {
+        reset();
+        std::swap(frame_num, other.frame_num);
+    }
+
+    return *this;
+}
+
+std::span<u8> PageGuard::data() const {
+    mark_dirty();  // NOTE: maybe this should be explicitly called only?
+    return mgr.frame_span(*frame_num);
+}
+
+std::span<const u8> PageGuard::const_data() const {
+    return mgr.frame_span(*frame_num);
+}
+
+void PageGuard::mark_dirty() const {
+    meta().is_dirty = true;
+}
 
 void BufferManager::load_page(const PageId& pid, std::size_t frame_num) {
     FrameMeta& meta = frame_meta[frame_num];
@@ -22,6 +65,13 @@ void BufferManager::load_page(const PageId& pid, std::size_t frame_num) {
 
     if (!file_mgr.read_page(pid.fid, pid.pnum, span))
         std::ranges::fill(span, 0);
+}
+
+void PageGuard::reset() {
+    if (frame_num) {
+        meta().pin_count -= 1;
+        frame_num.reset();
+    }
 }
 
 std::span<u8> BufferManager::frame_span(std::size_t frame_num) {
@@ -65,33 +115,6 @@ std::size_t BufferManager::obtain_free_frame() {
     std::size_t frame_num = free_frames.back();
     free_frames.pop_back();
     return frame_num;
-}
-
-auto BufferManager::PageGuard::meta() const -> FrameMeta& {
-    return mgr.frame_meta[frame_num];
-}
-
-BufferManager::PageGuard::PageGuard(BufferManager& mgr, std::size_t frame_num)
-    : mgr{mgr},
-      frame_num{frame_num} {
-    ++meta().pin_count;
-}
-
-BufferManager::PageGuard::~PageGuard() {
-    --meta().pin_count;
-}
-
-std::span<u8> BufferManager::PageGuard::data() const {
-    mark_dirty();  // NOTE: maybe this should be explicitly called only?
-    return mgr.frame_span(frame_num);
-}
-
-std::span<const u8> BufferManager::PageGuard::const_data() const {
-    return mgr.frame_span(frame_num);
-}
-
-void BufferManager::PageGuard::mark_dirty() const {
-    meta().is_dirty = true;
 }
 
 BufferManager::BufferManager(FileManager& file_mgr)

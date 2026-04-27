@@ -3,7 +3,9 @@
 
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <list>
+#include <optional>
 #include "file_manager.hpp"
 
 struct PageId {
@@ -65,7 +67,7 @@ public:
     class PageGuard {
     private:
         BufferManager& mgr;
-        std::size_t frame_num;
+        std::optional<std::size_t> frame_num = std::nullopt;
 
         [[nodiscard]] FrameMeta& meta() const;
 
@@ -75,15 +77,17 @@ public:
         ~PageGuard();
 
         PageGuard(const PageGuard& other) = delete;
-        PageGuard(PageGuard&& other) = delete;
+        PageGuard(PageGuard&& other) noexcept;
 
         PageGuard& operator=(const PageGuard& other) = delete;
-        PageGuard& operator=(PageGuard&& other) = delete;
+        PageGuard& operator=(PageGuard&& other) noexcept;
 
         [[nodiscard]] std::span<u8> data() const;
         [[nodiscard]] std::span<const u8> const_data() const;
 
         void mark_dirty() const;
+
+        void reset();
     };
 
     explicit BufferManager(FileManager& file_mgr);
