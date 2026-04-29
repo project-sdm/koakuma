@@ -3,6 +3,7 @@
 
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <expected>
@@ -44,15 +45,21 @@ namespace util {
     template<typename T>
         requires std::is_trivially_copyable_v<T>
     T span_read(std::span<const u8> data, std::size_t offset) {
+        auto sub = data.subspan(offset);
+        assert(sub.size() >= sizeof(T));
+
         std::array<u8, sizeof(T)> buf;
-        std::memcpy(buf.data(), data.subspan(offset).data(), sizeof(T));
+        std::memcpy(buf.data(), sub.data(), sizeof(T));
         return std::bit_cast<T>(buf);
     }
 
     template<typename T>
         requires std::is_trivially_copyable_v<T>
     void span_write(std::span<u8> data, std::size_t offset, const T& value) {
-        std::memcpy(data.subspan(offset).data(), &value, sizeof(value));
+        auto sub = data.subspan(offset);
+        assert(sub.size() >= sizeof(value));
+
+        std::memcpy(sub.data(), &value, sizeof(value));
     }
 
 }  // namespace util
