@@ -155,7 +155,7 @@ public:
         std::optional<Row> next();
     };
 
-    explicit SeqFile(Engine& engine, FileId fid);
+    SeqFile(Engine& engine, FileId fid);
 
     void init(std::vector<Column> columns, u32 pkey_col);
 

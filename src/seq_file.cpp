@@ -51,7 +51,7 @@ SeqFile::Slot SeqFile::read_slot(const BufferManager::PageGuard& page, u32 slot_
 }
 
 void SeqFile::write_slot(const BufferManager::PageGuard& page, u32 slot_idx, const Slot& slot) {
-    util::span_write<Slot>(page.data(), slot_offset(slot_idx), slot);
+    util::span_write(page.data(), slot_offset(slot_idx), slot);
 }
 
 Row SeqFile::read_row(const BufferManager::PageGuard& page, u32 slot_idx) {
@@ -193,7 +193,6 @@ Rid SeqFile::insert_into_aux(const Row& row) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
     pnum_t pnum = aux_pnum(file_hdr);
 
-    std::println("pnum: {}", pnum);
     auto aux_page = eng.buf_mgr.fetch_page(fid, pnum);
     auto aux_hdr = util::span_read<PageHeader>(aux_page.const_data(), 0);
 
@@ -201,7 +200,6 @@ Rid SeqFile::insert_into_aux(const Row& row) {
 
     u32 row_size = pack::pack_size(row);
     u32 new_data_begin = aux_hdr.data_begin - row_size;
-    std::println("new data begin: {}", new_data_begin);
 
     // TODO: replace this assertion with rebuild()
     assert(slot_offset(new_slot_idx) + sizeof(Slot) <= new_data_begin);
