@@ -21,6 +21,17 @@ struct PageId {
 };
 
 template<>
+struct std::formatter<PageId, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const PageId& pid, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "PageId {{ pid = {}, pnum = {} }}", pid.fid, pid.pnum);
+    }
+};
+
+template<>
 class std::hash<PageId> {
 public:
     std::size_t operator()(const PageId& pid) const {

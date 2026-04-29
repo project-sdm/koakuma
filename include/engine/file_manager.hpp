@@ -28,6 +28,18 @@ public:
     [[nodiscard]] bool operator==(const FileId& other) const;
 
     friend class std::hash<FileId>;
+    friend class std::formatter<FileId, char>;
+};
+
+template<>
+struct std::formatter<FileId, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const FileId& val, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "FileId{{{}}}", val.id);
+    }
 };
 
 template<>
