@@ -1,6 +1,8 @@
 #include "parser/parser.hpp"
 #include <cassert>
+#include <expected>
 #include "parser/ast.hpp"
+#include "parser/error.hpp"
 #include "parser/token.hpp"
 #include "util.hpp"
 
@@ -133,8 +135,17 @@ namespace parser {
         InsertValue value;
 
         do {
-            auto tok = TRY(expect_var<Literal>());
-            value.exprs.emplace_back(std::move(tok));
+            if (auto tok = TRY(accept_var<Number>()))
+                value.exprs.emplace_back(*tok);
+            else if (auto tok = TRY(accept_var<Literal>()))
+                value.exprs.emplace_back(*tok);
+            else if (TRY(accept_val<Keyword::True>()))
+                value.exprs.emplace_back(true);
+            else if (TRY(accept_val<Keyword::False>()))
+                value.exprs.emplace_back(false);
+            else
+                return std::unexpected{ParseError::UnexpectedToken};
+
         } while (TRY(accept_val<Symbol::Comma>()));
 
         return value;

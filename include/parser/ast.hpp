@@ -65,7 +65,7 @@ namespace parser {
         FilterData data;
     };
 
-    using Expr = std::variant<Literal, Number>;
+    using Expr = std::variant<Literal, Number, bool>;
 
     struct InsertValue {
         std::vector<Expr> exprs;
