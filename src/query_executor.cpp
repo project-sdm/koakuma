@@ -76,10 +76,18 @@ namespace volcano {
     };
 
     struct FilterVisitor {
-        bool operator()(int /*value*/) {
+        bool operator()(int value) {
+            if (auto* filter = std::get_if<parser::EqFilter>(&data))
+                if (auto* value_to_compare = std::get_if<f64>(&filter->value))
+                    return value == *value_to_compare;
+
             return false;
         }
-        bool operator()(bool /*value*/) {
+        bool operator()(bool value) {
+            if (auto* filter = std::get_if<parser::EqFilter>(&data))
+                if (auto* value_to_compare = std::get_if<bool>(&filter->value))
+                    return value == *value_to_compare;
+
             return false;
         }
         bool operator()(const std::string& value) {
