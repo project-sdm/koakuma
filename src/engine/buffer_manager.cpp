@@ -75,7 +75,12 @@ void BufferManager::load_page(const PageId& pid, std::size_t frame_num) {
 void PageGuard::reset() {
     if (frame_num) {
         meta().pin_count -= 1;
-        mgr.flush_page(meta().pid);  // PERF: we could flush lazily instead of immediately
+
+        if (meta().pin_count == 0) {
+            // PERF: we could flush lazily instead of immediately
+            mgr.flush_page(meta().pid);
+        }
+
         frame_num.reset();
     }
 }
@@ -135,6 +140,8 @@ BufferManager::~BufferManager() {
 }
 
 auto BufferManager::fetch_page(const FileId& fid, pnum_t pnum) -> PageGuard {
+    assert(pnum != 0);
+
     PageId pid{fid, pnum};
     auto it = page_table.find(pid);
 
