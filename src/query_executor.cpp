@@ -81,6 +81,9 @@ namespace volcano {
                 if (auto* value_to_compare = std::get_if<f64>(&filter->value))
                     return value == *value_to_compare;
 
+            if (auto* filter = std::get_if<parser::RangeFilter>(&data))
+                return filter->min_val <= value && value <= filter->max_val;
+
             return false;
         }
         bool operator()(bool value) {
