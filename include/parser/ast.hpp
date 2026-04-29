@@ -27,7 +27,7 @@ namespace parser {
     };
 
     struct EqFilter {
-        std::variant<std::string, f64> value;
+        std::variant<std::string, f64, bool> value;
     };
 
     struct RangeFilter {

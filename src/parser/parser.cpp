@@ -164,6 +164,10 @@ namespace parser {
                 eqfilter.value = std::move(tok->value);
             else if (auto tok = TRY(accept_var<Number>()))
                 eqfilter.value = tok->value;
+            else if (TRY(accept_val<Keyword::True>()))
+                eqfilter.value = true;
+            else if (TRY(accept_val<Keyword::False>()))
+                eqfilter.value = false;
             else
                 return std::unexpected{ParseError::UnexpectedToken};
 
