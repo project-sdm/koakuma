@@ -88,6 +88,7 @@ public:
     void write_page(const FileId& fid, pnum_t pnum, std::span<const u8> data);
 
     template<typename UserHeader>
+        requires std::is_default_constructible_v<UserHeader>
     UserHeader read_user_header(const FileId& fid);
 
     template<typename UserHeader>
@@ -95,6 +96,7 @@ public:
 };
 
 template<typename UserHeader>
+    requires std::is_default_constructible_v<UserHeader>
 UserHeader FileManager::read_user_header(const FileId& fid) {
     auto& file = open_files.at(fid);
     FileHeader header = read_file_header(file);
@@ -105,6 +107,7 @@ UserHeader FileManager::read_user_header(const FileId& fid) {
     // NOTE: this relies on read_file_header leaving `buf` with the first page.
     return pack::unpack_alloc<UserHeader>(buf.data() + sizeof(FileHeader));
 }
+
 template<typename UserHeader>
 void FileManager::write_user_header(const FileId& fid, const UserHeader& usr_header) {
     if (sizeof(FileHeader) + pack::pack_size<>(usr_header) > PAGE_SIZE)
