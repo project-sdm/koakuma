@@ -19,6 +19,25 @@ values
 select
   *
 from
+  users;
+
+select
+  *
+from
+  users
+where
+  age between 18 and 30;
+
+select
+  *
+from
+  users
+where
+  married = true;
+
+select
+  *
+from
   users
 where
   name = 'name_3';
