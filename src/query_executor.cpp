@@ -31,19 +31,6 @@ namespace volcano {
         explicit VolcanoIterator(It iter)
             : self{std::make_unique<Wrapper<It>>(std::move(iter))} {}
 
-        VolcanoIterator(const VolcanoIterator& other) = delete;
-        VolcanoIterator& operator=(const VolcanoIterator& other) = delete;
-
-        VolcanoIterator(VolcanoIterator&& other) noexcept
-            : self{std::move(other.self)} {}
-
-        VolcanoIterator& operator=(VolcanoIterator&& other) noexcept {
-            if (this != &other)
-                self = std::move(other.self);
-
-            return *this;
-        }
-
     private:
         class Contract {
         public:
