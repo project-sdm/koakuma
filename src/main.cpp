@@ -1,12 +1,11 @@
 #include <cassert>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <print>
-#include <vector>
-#include "catalog.hpp"
-#include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
-#include "engine/file_manager.hpp"
-#include "seq_file.hpp"
+#include "parser/parser.hpp"
+#include "query_executor.hpp"
 
 int main() {
     std::println(R"( _  __           _                          )");
@@ -17,31 +16,17 @@ int main() {
     std::println();
     std::println("Page size: {}", PAGE_SIZE);
 
-    FileManager file_mgr;
-    BufferManager buf_mgr{file_mgr};
-    Engine eng{};
+    std::ifstream file{"./data/test.sql"};
+    std::string source{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
 
-    std::vector<Column> columns = {
-        {"foo",    ColumnType::INT},
-        {"bar",   ColumnType::BOOL},
-        {"baz", ColumnType::STRING},
-    };
+    parser::Parser parser{source};
+    auto result = parser.source_file();
 
-    bool created = catalog::create_table(eng, "hello", std::move(columns), 0);
-    std::println("was table created: {}", created);
-
-    auto tbl = catalog::get_table(eng, "hello");
-    assert(tbl);
-
-    tbl->insert({42, true, "hello"});
-    tbl->insert({43, false, "goodbye"});
-    tbl->insert({60, true, "foo"});
-    tbl->insert({63, true, "bar"});
-
-    auto cursor = tbl->cursor();
-
-    while (auto row = cursor.next())
-        std::println("{}", *row);
-
-    return 0;
+    if (!result.has_value()) {
+        std::println("Error: {}", result.error());
+    } else {
+        Engine eng{};
+        QueryExecutor executor{eng};
+        executor.exec(*result);
+    }
 }

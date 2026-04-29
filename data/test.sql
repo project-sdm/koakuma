@@ -1,26 +1,24 @@
 create table "users" (
-  id uuid index btree_idx,
+  id uuid primary key,
   name varchar,
-  age int,
-  birth_date date primary key,
+  age int index btree_idx,
+  birth_date date,
   married bool
-) from file 'some/path';
+);
 
-select * from users;
+insert into
+  users
+values
+  ('id_1', 'name_1', 18, '28-04-2026', true),
+  ('id_2', 'name_2', 23, '22-04-2022', false),
+  ('id_3', 'name_3', 27, '25-04-2009', true),
+  ('id_4', 'name_4', 12, '28-04-1981', false),
+  ('id_5', 'name_5', 40, '18-03-2003', true),
+  ('id_6', 'name_6', 12, '28-04-1975', false);
 
-select * from users
-where id = '10';
-
-select * from users
-where some_important_value in (point(0, 0), radius 1.9);
-
-select * from users
-where other_important_value in (point(0, 0), k 727);
-
-insert into users values
-  ('some_id', 'some_name'),
-  ('other_id', 'other_name')
-;
-
-delete from users
-where name = 'pepito';
+select
+  *
+from
+  users
+where
+  name = 'name_3';
