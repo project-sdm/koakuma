@@ -44,6 +44,7 @@ std::fstream FileManager::open_create_inner(const std::filesystem::path& filenam
 
 bool FileManager::read_page(std::fstream& file, pnum_t pnum, std::span<u8> data) {
     assert(data.size_bytes() == PAGE_SIZE);
+    assert(file.good());
 
     file.seekg(page_offset(pnum), std::ios::beg);
     file.read(reinterpret_cast<char*>(data.data()),
@@ -59,10 +60,12 @@ bool FileManager::read_page(std::fstream& file, pnum_t pnum, std::span<u8> data)
 
 void FileManager::write_page(std::fstream& file, pnum_t pnum, std::span<const u8> data) {
     assert(data.size_bytes() == PAGE_SIZE);
+    assert(file.good());
 
     file.seekp(page_offset(pnum), std::ios::beg);
     file.write(reinterpret_cast<const char*>(data.data()),
                static_cast<std::streamsize>(data.size_bytes()));
+    file.flush();
 }
 
 constexpr u64 FileManager::gen_id() {
