@@ -13,6 +13,7 @@ add_executable(koakuma
   src/engine/buffer_manager.cpp
   src/engine/engine.cpp
   src/engine/file_manager.cpp
+  src/index/btree.cpp
   src/main.cpp
   src/pack.cpp
   src/parser/ast.cpp
