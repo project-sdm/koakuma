@@ -3,6 +3,8 @@
 
 // (actually a b+ tree)
 #include <optional>
+#include <print>
+#include <tuple>
 #include <utility>
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
@@ -47,6 +49,7 @@ private:
     private:
         PageGuard page;
         PageHeader hdr;
+        bool is_dirty = false;
 
         template<typename T>
         void push_back(const Value& pkey, T val);
@@ -67,7 +70,7 @@ private:
         void init();
 
         [[nodiscard]] PageHeader& header();
-        [[nodiscard]] const PageHeader& header() const;
+        [[nodiscard]] const PageHeader& const_header() const;
         [[nodiscard]] u32 slot_cnt() const;
 
         [[nodiscard]] static u32 slot_offset(u32 slot_idx);
@@ -99,14 +102,20 @@ private:
 
     [[nodiscard]] static u32 leaf_lower_bound_idx(const SlottedPage& page, const Value& pkey);
 
-    [[nodiscard]] std::pair<pnum_t, pnum_t> leaf_split(pnum_t og_pnum,
-                                                       u32 ins_idx,
-                                                       const Value& pkey,
-                                                       Rid rid);
+    [[nodiscard]] std::pair<pnum_t, pnum_t> leaf_insert_split(pnum_t og_pnum,
+                                                              u32 ins_idx,
+                                                              const Value& pkey,
+                                                              Rid rid);
+
+    [[nodiscard]] std::tuple<pnum_t, Value, pnum_t> inner_insert_split(pnum_t og_pnum,
+                                                                       u32 ins_idx,
+                                                                       const Value& ins_pkey,
+                                                                       pnum_t ins_left_child);
 
 public:
     BTreeIndex(Engine& engine, FileId fid);
 
+    void ugly_print() const;
     void init();
 
     bool insert(const Value& pkey, Rid rid);
@@ -126,8 +135,10 @@ void BTreeIndex::SlottedPage::insert(u32 idx, const Value& pkey, T val) {
     u32 pkey_size = pack::pack_size(pkey);
     assert(free_space() >= sizeof(Slot) + pkey_size);
 
+    is_dirty = true;
+
     // shift slots to the right
-    for (std::size_t i = hdr.slot_cnt; i > idx; ++i) {
+    for (std::size_t i = hdr.slot_cnt; i > idx; --i) {
         Slot slot = read_slot(i - 1);
         write_slot(i, slot);
     }

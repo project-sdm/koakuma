@@ -6,6 +6,7 @@
 #include <fstream>
 #include <ios>
 #include <optional>
+#include <print>
 #include "types.hpp"
 #include "util.hpp"
 
@@ -142,7 +143,7 @@ pnum_t FileManager::alloc_page(const FileId& fid) {
         header.page_capacity += 1;
         header.first_free = header.page_capacity;
     } else {
-        auto free_page = read_inactive_page(file, header.first_free);
+        auto free_page = read_inactive_page(file, new_page);
         header.first_free = free_page.next_free;
     }
 

@@ -12,7 +12,7 @@
 #include "pack.hpp"
 #include "types.hpp"
 
-static const std::size_t PAGE_SIZE = 1024;
+static const std::size_t PAGE_SIZE = 256;
 // static const std::size_t PAGE_SIZE = cross::get_page_size();
 
 using pnum_t = u64;

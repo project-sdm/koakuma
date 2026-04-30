@@ -1,11 +1,10 @@
 #include <cassert>
+#include <cstdlib>
 #include <format>
-#include <fstream>
-#include <iterator>
 #include <print>
 #include "engine/engine.hpp"
-#include "parser/parser.hpp"
-#include "query_executor.hpp"
+#include "engine/file_manager.hpp"
+#include "index/btree.hpp"
 
 int main() {
     std::println(R"( _  __           _                          )");
@@ -15,18 +14,28 @@ int main() {
     std::println(R"(|_|\_\___/ \__,_|_|\_\\__,_|_| |_| |_|\__,_|)");
     std::println();
     std::println("Page size: {}", PAGE_SIZE);
+    std::println();
 
-    std::ifstream file{"./data/test.sql"};
-    std::string source{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+    Engine eng{};
 
-    parser::Parser parser{source};
-    auto result = parser.source_file();
+    auto fid = eng.file_mgr.open_create("hello.index.bin");
+    BTreeIndex index{eng, fid};
 
-    if (!result.has_value()) {
-        std::println("Error: {}", result.error());
-    } else {
-        Engine eng{};
-        QueryExecutor executor{eng};
-        executor.exec(*result);
+    index.init();
+
+    for (int i = 0; i < 100; ++i) {
+        std::println();
+        int key = std::rand() % 500;
+        std::println("inserting {}", key);
+
+        bool result = index.insert(key, Rid{static_cast<u32>(2 * i), static_cast<u32>(3 * i)});
+
+        index.ugly_print();
     }
+
+    // index.insert(12, Rid{123, 345});
+
+    eng.file_mgr.close(fid);
+
+    return 0;
 }
