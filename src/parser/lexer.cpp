@@ -94,7 +94,10 @@ namespace {
     using state_t = i16;
     using Row = std::array<state_t, 256>;
 
-    constexpr std::size_t N_STATES = 25;
+    constexpr std::size_t N_STATES = 29;
+    constexpr state_t SINGLE_COMMENT_STATE = 25;
+    constexpr state_t MULTI_COMMENT_STATE = 27;
+    constexpr state_t END_COMMENT_STATE = 26;
     const std::array<Row, N_STATES> transition_table = [] {
         std::array<Row, N_STATES> out{};
 
@@ -131,6 +134,25 @@ namespace {
         out[0]['+'] = 13;
         out[0][';'] = 14;
         out[0]['-'] = 15;
+
+        out[3]['*'] = MULTI_COMMENT_STATE;
+        for (std::size_t i = 0; i < 256; ++i) {
+            auto c = static_cast<unsigned char>(i);
+            out[MULTI_COMMENT_STATE][c] = MULTI_COMMENT_STATE;
+        }
+        out[MULTI_COMMENT_STATE]['*'] = 28;
+        for (std::size_t i = 0; i < 256; ++i) {
+            auto c = static_cast<unsigned char>(i);
+            out[28][c] = MULTI_COMMENT_STATE;
+        }
+        out[28]['/'] = END_COMMENT_STATE;
+
+        out[15]['-'] = SINGLE_COMMENT_STATE;
+        for (std::size_t i = 0; i < 256; ++i) {
+            auto c = static_cast<unsigned char>(i);
+            out[SINGLE_COMMENT_STATE][c] = SINGLE_COMMENT_STATE;
+        }
+        out[SINGLE_COMMENT_STATE]['\n'] = END_COMMENT_STATE;
 
         add_digit(0, 16);
         add_digit(16, 16);
@@ -252,8 +274,6 @@ namespace parser {
             if (!is_ignorable(*opt))
                 break;
 
-            // TODO: re-add comment support
-
             consume();
         }
 
@@ -282,6 +302,9 @@ namespace parser {
 
         if (state == 0)
             consume();
+
+        if (state == END_COMMENT_STATE)
+            return next();
 
         if (!accepting_state.has_value())
             return std::unexpected{unwrap_error(state)};
