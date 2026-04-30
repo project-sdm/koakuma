@@ -18,6 +18,7 @@ Checks: >
   -google-readability-todo,
   -google-runtime-int,
   misc-*,
+  -misc-no-recursion
   -misc-non-private-member-variables-in-classes,
   modernize-*,
   -modernize-use-trailing-return-type,
