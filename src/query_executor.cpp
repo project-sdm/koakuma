@@ -75,7 +75,11 @@ namespace volcano {
         SeqFile::Cursor cursor;
     };
 
-    struct FilterVisitor {
+    class FilterVisitor {
+    public:
+        explicit FilterVisitor(parser::FilterData data)
+            : data{std::move(data)} {}
+
         bool operator()(int value) {
             if (auto* filter = std::get_if<parser::EqFilter>(&data))
                 if (auto* value_to_compare = std::get_if<f64>(&filter->value))
@@ -101,6 +105,7 @@ namespace volcano {
             return false;
         }
 
+    private:
         parser::FilterData data;
     };
 
@@ -124,6 +129,7 @@ namespace volcano {
               filter{std::move(filter)},
               meta{std::move(meta)} {}
 
+    private:
         VolcanoIterator child;
         parser::Filter filter;
         SeqFile::Meta meta;
@@ -138,15 +144,12 @@ namespace {
             case DataType::Bool:
                 return ColumnType::BOOL;
             case DataType::Date:
-                return ColumnType::STRING;
-            case DataType::Int:
-                return ColumnType::INT;
-            case DataType::Real:
-                return ColumnType::INT;  // TODO: add float type
             case DataType::Text:
-                return ColumnType::STRING;
             case DataType::Uuid:
                 return ColumnType::STRING;
+            case DataType::Int:
+            case DataType::Real:
+                return ColumnType::INT;  // TODO: add float type
             case DataType::Varchar:
                 return ColumnType::STRING;
         }
