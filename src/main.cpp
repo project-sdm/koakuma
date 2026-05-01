@@ -28,7 +28,7 @@ int main() {
         int key = std::rand() % 500;
         std::println("inserting {}", key);
 
-        bool result = index.insert(key, Rid{static_cast<u32>(2 * i), static_cast<u32>(3 * i)});
+        bool result = index.add(key, Rid{static_cast<u32>(2 * i), static_cast<u32>(3 * i)});
 
         index.ugly_print();
     }

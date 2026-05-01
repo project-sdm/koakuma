@@ -14,6 +14,7 @@ add_executable(koakuma
   src/engine/engine.cpp
   src/engine/file_manager.cpp
   src/index/btree.cpp
+  src/layout/slotted_page.cpp
   src/main.cpp
   src/pack.cpp
   src/parser/ast.cpp
