@@ -4,7 +4,9 @@
 #include <functional>
 #include <optional>
 #include <print>
+#include <utility>
 #include <variant>
+#include "engine/buffer_manager.hpp"
 #include "engine/file_manager.hpp"
 #include "seq_file.hpp"
 #include "types.hpp"
@@ -39,7 +41,14 @@ void HashIndex::add(const Value& key, Rid rid) {
 
     pnum_t cur_pnum = file_hdr.dir[h_part];
 
+    std::optional<pnum_t> to_free = std::nullopt;
+
     while (true) {
+        if (to_free) {
+            eng.file_mgr.free_page(fid, *to_free);
+            to_free.reset();
+        }
+
         BucketPage cur_bucket{eng.buf_mgr.fetch_page(fid, cur_pnum)};
 
         // case 1: key fits
@@ -114,40 +123,26 @@ void HashIndex::add(const Value& key, Rid rid) {
         file_hdr.dir[h_part | (1 << local_depth)] = bucket_1;
         eng.file_mgr.write_user_header<HashHeader>(fid, file_hdr);
 
+        to_free = cur_pnum;
+
         std::size_t h_part_new = h_full % (1 << file_hdr.global_depth);
         cur_pnum = file_hdr.dir[h_part_new];
     }
 }
 
-std::optional<Rid> HashIndex::search(const Value& pkey) {
+HashIndex::Cursor HashIndex::search(const Value& key) {
     auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
 
-    std::size_t h = std::hash<Value>{}(pkey) % (1 << file_hdr.global_depth);
-    pnum_t cur_bucket = file_hdr.dir[h];
+    std::size_t h = std::hash<Value>{}(key);
+    std::size_t h_part = h % (1 << file_hdr.global_depth);
 
-    while (cur_bucket != PAGE_NIL) {
-        BucketPage bucket_page{eng.buf_mgr.fetch_page(fid, cur_bucket)};
-
-        for (u32 i = 0; i < bucket_page.slot_cnt(); ++i) {
-            auto slot = bucket_page.read_slot(i);
-
-            if (pkey == bucket_page.read_data(slot))
-                return slot.extra().rid;
-        }
-
-        if (const auto* next = std::get_if<pnum_t>(&bucket_page.const_header_extra()))
-            cur_bucket = *next;
-        else
-            break;
-    }
-
-    return std::nullopt;
+    return Cursor{eng.buf_mgr, fid, file_hdr.dir[h_part], key};
 }
 
-bool HashIndex::remove(const Value& pkey) {
+bool HashIndex::remove(const Value& key) {
     auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
 
-    std::size_t h = std::hash<Value>{}(pkey) % (1 << file_hdr.global_depth);
+    std::size_t h = std::hash<Value>{}(key) % (1 << file_hdr.global_depth);
     pnum_t cur_bucket = file_hdr.dir[h];
 
     while (cur_bucket != PAGE_NIL) {
@@ -156,7 +151,7 @@ bool HashIndex::remove(const Value& pkey) {
         for (u32 i = 0; i < bucket_page.slot_cnt(); ++i) {
             auto slot = bucket_page.read_slot(i);
 
-            if (pkey == bucket_page.read_data(slot)) {
+            if (key == bucket_page.read_data(slot)) {
                 bucket_page.swap_remove(i);
                 return true;
             }
@@ -165,7 +160,7 @@ bool HashIndex::remove(const Value& pkey) {
         if (const auto* next = std::get_if<pnum_t>(&bucket_page.const_header_extra()))
             cur_bucket = *next;
         else
-            break;
+            cur_bucket = PAGE_NIL;
     }
 
     return false;
@@ -195,5 +190,43 @@ void HashIndex::ugly_print() const {
         }
 
         std::println();
+    }
+}
+
+HashIndex::Cursor::Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, Value search_key)
+    : fid{fid},
+      buf_mgr{buf_mgr},
+      cur_pnum{init_pnum},
+      search_key{std::move(search_key)} {}
+
+std::optional<Rid> HashIndex::Cursor::next() {
+    while (true) {
+        if (cur_pnum == PAGE_NIL)
+            return std::nullopt;
+
+        if (!page)
+            page = BucketPage{buf_mgr.fetch_page(fid, cur_pnum)};
+
+        assert(cur_slot <= page->slot_cnt());
+
+        if (cur_slot == page->slot_cnt()) {
+            page = std::nullopt;
+            cur_slot = 0;
+
+            if (const auto* next = std::get_if<pnum_t>(&page->const_header_extra()))
+                cur_pnum = *next;
+            else
+                cur_pnum = PAGE_NIL;
+
+            continue;
+        }
+
+        auto slot = page->read_slot(cur_slot);
+        Value key = page->read_data(slot);
+
+        cur_slot += 1;
+
+        if (key == search_key)
+            return slot.extra().rid;
     }
 }

@@ -28,37 +28,14 @@ bool BTreeIndex::is_leaf(const NodeExtra& node) {
     return node.last_child == PAGE_NIL;
 }
 
-std::optional<Rid> BTreeIndex::search(const Value& pkey) {
-    auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
-    assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
-
-    pnum_t cur_page = file_hdr.root;
-
-    while (true) {
-        NodePage page{eng.buf_mgr.fetch_page(fid, cur_page)};
-        if (is_leaf(page.const_header_extra()))
-            break;
-
-        auto [_, fit_child] = inner_find_child(page, pkey);
-        cur_page = fit_child;
-    }
-
-    NodePage leaf_page{eng.buf_mgr.fetch_page(fid, cur_page)};
-
-    for (u32 i = 0; i < leaf_page.slot_cnt(); ++i) {
-        auto slot = leaf_page.read_slot(i);
-
-        if (pkey == leaf_page.read_data(slot))
-            return slot.extra().rid;
-    }
-
-    return std::nullopt;
+BTreeIndex::RangeCursor BTreeIndex::search(const Value& key) {
+    return range_search(key, key);
 }
 
 // og_pnum is freed and becomes invalid
 std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
                                                         u32 ins_idx,
-                                                        const Value& ins_pkey,
+                                                        const Value& ins_key,
                                                         Rid ins_rid) {
     NodePage og_page{eng.buf_mgr.fetch_page(fid, og_pnum)};
 
@@ -70,16 +47,16 @@ std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
     auto take_entry = [&]() {
         if (new_slot_pending && src_slot == ins_idx) {
             new_slot_pending = false;
-            return std::make_pair(ins_pkey, ins_rid);
+            return std::make_pair(ins_key, ins_rid);
         }
 
         assert(src_slot < og_page.slot_cnt());
 
         auto slot = og_page.read_slot(src_slot);
-        Value slot_pkey = og_page.read_data(slot);
+        Value slot_key = og_page.read_data(slot);
         src_slot += 1;
 
-        return std::make_pair(slot_pkey, slot.extra().rid);
+        return std::make_pair(slot_key, slot.extra().rid);
     };
 
     pnum_t left_pnum = eng.file_mgr.alloc_page(fid);
@@ -105,8 +82,8 @@ std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
         left_page.header_extra().prev_page = og_page.const_header_extra().prev_page;
 
         while (left_page.free_space() > left_page.total_space() / 2) {
-            auto [pkey, rid] = take_entry();
-            left_page.push_back(SlotExtra::leaf(rid), pkey);
+            auto [key, rid] = take_entry();
+            left_page.push_back(SlotExtra::leaf(rid), key);
         }
     }
 
@@ -118,8 +95,8 @@ std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
         right_page.header_extra().prev_page = left_pnum;
 
         while (entry_pending()) {
-            auto [pkey, rid] = take_entry();
-            right_page.push_back(SlotExtra::leaf(rid), pkey);
+            auto [key, rid] = take_entry();
+            right_page.push_back(SlotExtra::leaf(rid), key);
         }
     }
 
@@ -128,7 +105,7 @@ std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
 
 std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
                                                                  u32 ins_idx,
-                                                                 const Value& ins_pkey,
+                                                                 const Value& ins_key,
                                                                  pnum_t ins_left_child) {
     NodePage og_page{eng.buf_mgr.fetch_page(fid, og_pnum)};
 
@@ -141,19 +118,19 @@ std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
     auto take_entry = [&]() {
         if (mid_pending && src_slot == ins_idx) {
             mid_pending = false;
-            return std::make_pair(ins_pkey, ins_left_child);
+            return std::make_pair(ins_key, ins_left_child);
         }
 
         assert(src_slot < og_page.slot_cnt());
 
         auto slot = og_page.read_slot(src_slot);
-        Value slot_pkey = og_page.read_data(slot);
+        Value slot_key = og_page.read_data(slot);
         src_slot += 1;
 
-        return std::make_pair(slot_pkey, slot.extra().left_child);
+        return std::make_pair(slot_key, slot.extra().left_child);
     };
 
-    Value mid_pkey;
+    Value mid_key;
 
     {
         NodePage left_page{eng.buf_mgr.fetch_page(fid, left_pnum)};
@@ -163,13 +140,13 @@ std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
         left_page.header_extra().prev_page = og_page.const_header_extra().prev_page;
 
         while (left_page.free_space() > left_page.total_space() / 2) {
-            auto [pkey, left_child] = take_entry();
-            left_page.push_back(SlotExtra::inner(left_child), pkey);
+            auto [key, left_child] = take_entry();
+            left_page.push_back(SlotExtra::inner(left_child), key);
         }
 
-        auto [next_pkey, next_left_child] = take_entry();
+        auto [next_key, next_left_child] = take_entry();
 
-        mid_pkey = std::move(next_pkey);
+        mid_key = std::move(next_key);
         left_page.header_extra().last_child = next_left_child;
     }
 
@@ -181,24 +158,24 @@ std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
         right_page.header_extra().prev_page = left_pnum;
 
         while (src_slot < og_page.slot_cnt() || mid_pending) {
-            auto [pkey, left_child] = take_entry();
-            right_page.push_back(SlotExtra{left_child}, pkey);
+            auto [key, left_child] = take_entry();
+            right_page.push_back(SlotExtra{left_child}, key);
         }
 
         right_page.header_extra().last_child = og_page.const_header_extra().last_child;
     }
 
-    return {left_pnum, mid_pkey, right_pnum};
+    return {left_pnum, mid_key, right_pnum};
 }
 
-std::pair<u32, pnum_t> BTreeIndex::inner_find_child(const NodePage& page, const Value& pkey) {
+std::pair<u32, pnum_t> BTreeIndex::inner_find_child(const NodePage& page, const Value& key) {
     assert(!is_leaf(page.const_header_extra()));
     u32 fit_idx = 0;
 
     for (; fit_idx < page.slot_cnt(); ++fit_idx) {
         auto slot = page.read_slot(fit_idx);
 
-        if (pkey < page.read_data(slot)) {
+        if (key < page.read_data(slot)) {
             return {fit_idx, slot.extra().left_child};
         }
     }
@@ -206,23 +183,23 @@ std::pair<u32, pnum_t> BTreeIndex::inner_find_child(const NodePage& page, const 
     return {fit_idx, page.const_header_extra().last_child};
 }
 
-u32 BTreeIndex::leaf_lower_bound_idx(const NodePage& page, const Value& pkey) {
+u32 BTreeIndex::leaf_lower_bound_idx(const NodePage& page, const Value& key) {
     assert(is_leaf(page.const_header_extra()));
 
     u32 ins_idx = 0;
 
     for (; ins_idx < page.slot_cnt(); ++ins_idx) {
         auto slot = page.read_slot(ins_idx);
-        auto key = page.read_data(slot);
+        auto slot_key = page.read_data(slot);
 
-        if (pkey <= key)
+        if (key <= slot_key)
             break;
     }
 
     return ins_idx;
 }
 
-void BTreeIndex::add(const Value& pkey, Rid rid) {
+void BTreeIndex::add(const Value& key, Rid rid) {
     auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
 
     assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
@@ -235,7 +212,7 @@ void BTreeIndex::add(const Value& pkey, Rid rid) {
         if (is_leaf(page.const_header_extra()))
             break;
 
-        auto [fit_idx, fit_child] = inner_find_child(page, pkey);
+        auto [fit_idx, fit_child] = inner_find_child(page, key);
 
         path.emplace(cur_page, fit_idx);
         cur_page = fit_child;
@@ -248,18 +225,18 @@ void BTreeIndex::add(const Value& pkey, Rid rid) {
     {
         NodePage leaf_page{eng.buf_mgr.fetch_page(fid, leaf_pnum)};
 
-        ins_idx = leaf_lower_bound_idx(leaf_page, pkey);
+        ins_idx = leaf_lower_bound_idx(leaf_page, key);
 
-        if (leaf_page.will_fit(pkey)) {
+        if (leaf_page.will_fit(key)) {
             // a non-overflowing insert NEVER causes inner node updates. I have
             // discovered a truly marvelous proof of this, which this comment
             // is too narrow to contain.
-            leaf_page.insert(ins_idx, SlotExtra::leaf(rid), pkey);
+            leaf_page.insert(ins_idx, SlotExtra::leaf(rid), key);
             return;
         }
     }
 
-    auto [left_pnum, right_pnum] = leaf_insert_split(leaf_pnum, ins_idx, pkey, rid);
+    auto [left_pnum, right_pnum] = leaf_insert_split(leaf_pnum, ins_idx, key, rid);
     eng.file_mgr.free_page(fid, leaf_pnum);
 
     std::optional<std::tuple<pnum_t, Value, pnum_t>> lifted;
@@ -358,7 +335,7 @@ void BTreeIndex::ugly_print() const {
     std::println();
 }
 
-bool BTreeIndex::remove(const Value& pkey) {
+bool BTreeIndex::remove(const Value& key) {
     auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
 
     assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
@@ -371,7 +348,7 @@ bool BTreeIndex::remove(const Value& pkey) {
         if (is_leaf(page.const_header_extra()))
             break;
 
-        auto [fit_idx, fit_child] = inner_find_child(page, pkey);
+        auto [fit_idx, fit_child] = inner_find_child(page, key);
 
         path.emplace(cur_page, fit_idx);
         cur_page = fit_child;
@@ -387,7 +364,7 @@ bool BTreeIndex::remove(const Value& pkey) {
         for (; i < leaf_page.slot_cnt(); ++i) {
             auto slot = leaf_page.read_slot(i);
 
-            if (pkey == leaf_page.read_data(slot))
+            if (key == leaf_page.read_data(slot))
                 break;
         }
 
@@ -396,7 +373,7 @@ bool BTreeIndex::remove(const Value& pkey) {
         if (i == leaf_page.slot_cnt())
             return false;
 
-        auto removed_pkey = leaf_page.read_data(i);
+        auto removed_key = leaf_page.read_data(i);
         leaf_page.remove(i);
 
         updated_min = leaf_page.read_data(0);
@@ -437,8 +414,8 @@ bool BTreeIndex::remove(const Value& pkey) {
 
                             for (u32 i = 0; i < leaf_page.slot_cnt(); ++i) {
                                 auto slot = leaf_page.read_slot(i);
-                                Value slot_pkey = leaf_page.read_data(slot);
-                                prev_page.push_back(slot.extra(), slot_pkey);
+                                Value slot_key = leaf_page.read_data(slot);
+                                prev_page.push_back(slot.extra(), slot_key);
                             }
                         }
 
@@ -463,8 +440,8 @@ bool BTreeIndex::remove(const Value& pkey) {
 
                             for (u32 i = 0; i < next_page.slot_cnt(); ++i) {
                                 auto slot = next_page.read_slot(i);
-                                Value slot_pkey = next_page.read_data(slot);
-                                leaf_page.push_back(slot.extra(), slot_pkey);
+                                Value slot_key = next_page.read_data(slot);
+                                leaf_page.push_back(slot.extra(), slot_key);
                             }
                         }
 
@@ -554,11 +531,11 @@ bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 pa
 
 using RangeCursor = BTreeIndex::RangeCursor;
 
-RangeCursor::RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value pkey_high)
+RangeCursor::RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value key_high)
     : buf_mgr{buf_mgr},
       cur_pnum{init_page},
       cur_slot{init_slot},
-      pkey_high{std::move(pkey_high)} {}
+      key_high{std::move(key_high)} {}
 
 RangeCursor::RangeCursor(BufferManager& buf_mgr)
     : buf_mgr{buf_mgr},
@@ -593,7 +570,7 @@ std::optional<Rid> RangeCursor::next() {
     auto slot = page->read_slot(cur_slot);
     Value key = page->read_data(slot);
 
-    if (key > pkey_high) {
+    if (key > key_high) {
         finished = true;
         page = std::nullopt;
         return std::nullopt;
@@ -603,7 +580,7 @@ std::optional<Rid> RangeCursor::next() {
     return slot.extra().rid;
 }
 
-RangeCursor BTreeIndex::range_search(const Value& pkey_low, const Value& pkey_high) {
+RangeCursor BTreeIndex::range_search(const Value& key_low, const Value& key_high) {
     auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
     assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
 
@@ -614,7 +591,7 @@ RangeCursor BTreeIndex::range_search(const Value& pkey_low, const Value& pkey_hi
         if (is_leaf(page.const_header_extra()))
             break;
 
-        auto [_, fit_child] = inner_find_child(page, pkey_low);
+        auto [_, fit_child] = inner_find_child(page, key_low);
         cur_page = fit_child;
     }
 
@@ -625,9 +602,9 @@ RangeCursor BTreeIndex::range_search(const Value& pkey_low, const Value& pkey_hi
     for (; start_slot < leaf_page.slot_cnt(); ++start_slot) {
         auto slot = leaf_page.read_slot(start_slot);
 
-        if (leaf_page.read_data(slot) >= pkey_low)
+        if (leaf_page.read_data(slot) >= key_low)
             break;
     }
 
-    return RangeCursor{eng.buf_mgr, cur_page, start_slot, pkey_high};
+    return RangeCursor{eng.buf_mgr, cur_page, start_slot, key_high};
 }

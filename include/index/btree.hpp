@@ -44,18 +44,18 @@ private:
     [[nodiscard]] static bool is_leaf(const NodeExtra& node);
 
     [[nodiscard]] static std::pair<u32, pnum_t> inner_find_child(const NodePage& page,
-                                                                 const Value& pkey);
+                                                                 const Value& key);
 
-    [[nodiscard]] static u32 leaf_lower_bound_idx(const NodePage& page, const Value& pkey);
+    [[nodiscard]] static u32 leaf_lower_bound_idx(const NodePage& page, const Value& key);
 
     [[nodiscard]] std::pair<pnum_t, pnum_t> leaf_insert_split(pnum_t og_pnum,
                                                               u32 ins_idx,
-                                                              const Value& pkey,
+                                                              const Value& key,
                                                               Rid rid);
 
     [[nodiscard]] std::tuple<pnum_t, Value, pnum_t> inner_insert_split(pnum_t og_pnum,
                                                                        u32 ins_idx,
-                                                                       const Value& ins_pkey,
+                                                                       const Value& ins_key,
                                                                        pnum_t ins_left_child);
 
     bool leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 par_idx);
@@ -70,12 +70,12 @@ public:
         std::optional<NodePage> page = std::nullopt;
         pnum_t cur_pnum;
         u32 cur_slot;
-        Value pkey_high;
+        Value key_high;
         bool finished = false;
 
     public:
         explicit RangeCursor(BufferManager& buf_mgr);
-        RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value pkey_high);
+        RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value key_high);
 
         std::optional<Rid> next();
     };
@@ -85,13 +85,13 @@ public:
     void ugly_print() const;
     void init();
 
-    void add(const Value& pkey, Rid rid);
+    void add(const Value& key, Rid rid);
 
-    [[nodiscard]] std::optional<Rid> search(const Value& pkey);
+    [[nodiscard]] RangeCursor search(const Value& key);
 
-    [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
+    [[nodiscard]] RangeCursor range_search(const Value& key_low, const Value& key_high);
 
-    bool remove(const Value& pkey);
+    bool remove(const Value& key);
 };
 
 #endif

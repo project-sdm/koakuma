@@ -4,6 +4,7 @@
 #include <optional>
 #include <variant>
 #include <vector>
+#include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
@@ -35,13 +36,28 @@ private:
     friend struct pack::Unpack<HashHeader>;
 
 public:
+    class Cursor {
+        std::optional<BucketPage> page = std::nullopt;
+
+        FileId fid;
+        BufferManager& buf_mgr;
+        pnum_t cur_pnum;
+        u32 cur_slot = 0;
+        Value search_key;
+
+    public:
+        Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, Value search_key);
+
+        std::optional<Rid> next();
+    };
+
     HashIndex(Engine& eng, FileId fid);
 
     void init();
 
     void add(const Value& pkey, Rid rid);
 
-    [[nodiscard]] std::optional<Rid> search(const Value& pkey);
+    [[nodiscard]] Cursor search(const Value& pkey);
 
     bool remove(const Value& pkey);
 
