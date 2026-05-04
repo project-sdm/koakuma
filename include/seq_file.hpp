@@ -147,8 +147,6 @@ public:
         u32 cur_slot = 0;
         pnum_t cur_pnum = 1;
 
-        std::optional<Rid> next_slot();
-
     public:
         explicit Cursor(SeqFile& seq_file);
 

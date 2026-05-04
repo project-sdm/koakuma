@@ -4,6 +4,7 @@
 #include <optional>
 #include <tuple>
 #include <utility>
+#include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
@@ -57,7 +58,28 @@ private:
                                                                        const Value& ins_pkey,
                                                                        pnum_t ins_left_child);
 
+    bool leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 par_idx);
+
+    [[nodiscard]] pnum_t static child_pnum(const NodePage& page, u32 child_idx);
+
 public:
+    class RangeCursor {
+    private:
+        FileId fid;
+        BufferManager& buf_mgr;
+        std::optional<NodePage> page = std::nullopt;
+        pnum_t cur_pnum;
+        u32 cur_slot;
+        Value pkey_high;
+        bool finished = false;
+
+    public:
+        explicit RangeCursor(BufferManager& buf_mgr);
+        RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value pkey_high);
+
+        std::optional<Rid> next();
+    };
+
     BTreeIndex(Engine& engine, FileId fid);
 
     void ugly_print() const;
@@ -67,8 +89,7 @@ public:
 
     [[nodiscard]] std::optional<Rid> search(const Value& pkey);
 
-    // TODO: implement range search
-    // [[nodiscard]] std::optional<Rid> range_search(const Value& pkey_low, const Value& pkey_high);
+    [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
 
     bool remove(const Value& pkey);
 };

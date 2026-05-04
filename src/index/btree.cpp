@@ -1,12 +1,12 @@
 #include "index/btree.hpp"
 #include <cassert>
-#include <cstddef>
 #include <optional>
 #include <print>
 #include <queue>
 #include <stack>
 #include <tuple>
 #include <utility>
+#include "engine/buffer_manager.hpp"
 #include "engine/file_manager.hpp"
 #include "seq_file.hpp"
 
@@ -45,7 +45,7 @@ std::optional<Rid> BTreeIndex::search(const Value& pkey) {
 
     NodePage leaf_page{eng.buf_mgr.fetch_page(fid, cur_page)};
 
-    for (std::size_t i = 0; i < leaf_page.slot_cnt(); ++i) {
+    for (u32 i = 0; i < leaf_page.slot_cnt(); ++i) {
         auto slot = leaf_page.read_slot(i);
 
         if (pkey == leaf_page.read_data(slot))
@@ -84,6 +84,18 @@ std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
 
     pnum_t left_pnum = eng.file_mgr.alloc_page(fid);
     pnum_t right_pnum = eng.file_mgr.alloc_page(fid);
+
+    auto og_hdr = og_page.const_header_extra();
+
+    if (og_hdr.prev_page != PAGE_NIL) {
+        NodePage og_left_page{eng.buf_mgr.fetch_page(fid, og_hdr.prev_page)};
+        og_left_page.header_extra().next_page = left_pnum;
+    }
+
+    if (og_hdr.next_page != PAGE_NIL) {
+        NodePage og_right_page{eng.buf_mgr.fetch_page(fid, og_hdr.next_page)};
+        og_right_page.header_extra().next_page = right_pnum;
+    }
 
     {
         NodePage left_page{eng.buf_mgr.fetch_page(fid, left_pnum)};
@@ -349,4 +361,277 @@ void BTreeIndex::ugly_print() const {
     }
 
     std::println();
+}
+
+bool BTreeIndex::remove(const Value& pkey) {
+    auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
+
+    assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
+
+    pnum_t cur_page = file_hdr.root;
+    std::stack<std::pair<pnum_t, u32>> path;
+
+    while (true) {
+        NodePage page{eng.buf_mgr.fetch_page(fid, cur_page)};
+        if (is_leaf(page.const_header_extra()))
+            break;
+
+        auto [fit_idx, fit_child] = inner_find_child(page, pkey);
+
+        path.emplace(cur_page, fit_idx);
+        cur_page = fit_child;
+    }
+
+    pnum_t leaf_pnum = cur_page;
+    std::optional<Value> updated_min = std::nullopt;
+
+    {
+        NodePage leaf_page{eng.buf_mgr.fetch_page(fid, leaf_pnum)};
+        u32 i = 0;
+
+        for (; i < leaf_page.slot_cnt(); ++i) {
+            auto slot = leaf_page.read_slot(i);
+
+            if (pkey == leaf_page.read_data(slot))
+                break;
+        }
+
+        assert(i <= leaf_page.slot_cnt());
+
+        if (i == leaf_page.slot_cnt())
+            return false;
+
+        auto removed_pkey = leaf_page.read_data(i);
+        leaf_page.remove(i);
+
+        updated_min = leaf_page.read_data(0);
+
+        // first path.pop() is an edge case for leaves.
+        // we do it here to use the existing leaf_page object
+    }
+
+    if (!path.empty()) {
+        auto [par_pnum, par_idx] = path.top();
+        path.pop();
+
+        NodePage par_page{eng.buf_mgr.fetch_page(fid, par_pnum)};
+
+        pnum_t leaf_pnum = child_pnum(par_page, par_idx);
+        std::optional<pnum_t> to_free = std::nullopt;
+
+        {
+            NodePage leaf_page{eng.buf_mgr.fetch_page(fid, leaf_pnum)};
+
+            if (par_idx > 0) {
+                par_page.update_data(par_idx - 1, *updated_min);
+                updated_min = std::nullopt;
+            }
+
+            if (leaf_page.used_space() < leaf_page.total_space() / 2) {
+                // borrow if possible, otherwise merge (with prev if possible, otherwise with next)
+                if (!leaf_try_borrow(leaf_page, par_page, par_idx)) {
+                    auto leaf_hdr_extra = leaf_page.const_header_extra();
+
+                    if (leaf_hdr_extra.prev_page != PAGE_NIL) {
+                        // merge leaf onto prev
+                        to_free = leaf_pnum;
+
+                        {
+                            NodePage prev_page{
+                                eng.buf_mgr.fetch_page(fid, leaf_hdr_extra.prev_page)};
+
+                            for (u32 i = 0; i < leaf_page.slot_cnt(); ++i) {
+                                auto slot = leaf_page.read_slot(i);
+                                Value slot_pkey = leaf_page.read_data(slot);
+                                prev_page.push_back(slot.extra(), slot_pkey);
+                            }
+                        }
+
+                        if (par_idx < par_page.slot_cnt() - 1) {
+                            assert(par_idx > 0);
+
+                            Value shifted_key = par_page.read_data(par_idx);
+                            par_page.remove(par_idx);
+                            par_page.update_data(par_idx - 1, shifted_key);
+                        } else {
+                            assert(false && "TODO: test this");
+                            par_page.remove(par_page.slot_cnt() - 1);
+                            par_page.header_extra().last_child = leaf_hdr_extra.prev_page;
+                        }
+                    } else if (leaf_hdr_extra.next_page != PAGE_NIL) {
+                        // merge next onto leaf
+                        to_free = leaf_hdr_extra.next_page;
+
+                        {
+                            NodePage next_page{
+                                eng.buf_mgr.fetch_page(fid, leaf_hdr_extra.next_page)};
+
+                            for (u32 i = 0; i < next_page.slot_cnt(); ++i) {
+                                auto slot = next_page.read_slot(i);
+                                Value slot_pkey = next_page.read_data(slot);
+                                leaf_page.push_back(slot.extra(), slot_pkey);
+                            }
+                        }
+
+                        if (par_idx < par_page.slot_cnt() - 1) {
+                            Value shifted_key = par_page.read_data(par_idx + 1);
+                            par_page.remove(par_idx + 1);
+                            par_page.update_data(par_idx, shifted_key);
+                        } else {
+                            assert(false && "TODO: test this");
+                            par_page.remove(par_page.slot_cnt() - 1);
+                            par_page.header_extra().last_child = leaf_pnum;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (to_free)
+            eng.file_mgr.free_page(fid, *to_free);
+    }
+
+    while (!path.empty()) {
+        auto [pnum, idx] = path.top();
+        path.pop();
+
+        if (updated_min) {
+            NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
+
+            if (idx > 0) {
+                page.update_data(idx - 1, *updated_min);
+                updated_min = std::nullopt;  // this did not update the current subtree's min key
+            }
+        }
+
+        assert(false);
+    }
+
+    return true;
+}
+
+bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 par_idx) {
+    auto hdr_extra = leaf_page.const_header_extra();
+
+    if (hdr_extra.prev_page != PAGE_NIL) {
+        NodePage prev_page{eng.buf_mgr.fetch_page(fid, hdr_extra.prev_page)};
+        auto last_slot = prev_page.read_slot(prev_page.slot_cnt() - 1);
+
+        if (prev_page.used_space() >= prev_page.total_space() / 2) {
+            Value borrowed = prev_page.read_data(last_slot);
+            prev_page.remove(prev_page.slot_cnt() - 1);
+
+            leaf_page.insert(0, SlotExtra::leaf(last_slot.extra().rid), borrowed);
+
+            assert(par_idx > 0);
+            par_page.update_data(par_idx - 1, borrowed);
+            return true;
+        }
+    }
+
+    if (hdr_extra.next_page != PAGE_NIL) {
+        NodePage next_page{eng.buf_mgr.fetch_page(fid, hdr_extra.next_page)};
+        auto fst_slot = next_page.read_slot(0);
+
+        if (next_page.used_space() >= next_page.total_space() / 2) {
+            Value borrowed = next_page.read_data(fst_slot);
+            next_page.remove(0);
+
+            leaf_page.push_back(SlotExtra::leaf(fst_slot.extra().rid), borrowed);
+
+            Value new_right_min = next_page.read_data(0);
+            par_page.update_data(par_idx, new_right_min);
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+[[nodiscard]] pnum_t BTreeIndex::child_pnum(const NodePage& page, u32 child_idx) {
+    if (child_idx == page.slot_cnt())
+        return page.const_header_extra().last_child;
+
+    auto slot = page.read_slot(child_idx);
+    return slot.extra().left_child;
+}
+
+using RangeCursor = BTreeIndex::RangeCursor;
+
+RangeCursor::RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value pkey_high)
+    : buf_mgr{buf_mgr},
+      cur_pnum{init_page},
+      cur_slot{init_slot},
+      pkey_high{std::move(pkey_high)} {}
+
+RangeCursor::RangeCursor(BufferManager& buf_mgr)
+    : buf_mgr{buf_mgr},
+      cur_pnum{0},
+      cur_slot{0},
+      finished{true} {}
+
+std::optional<Rid> RangeCursor::next() {
+    if (finished) {
+        assert(!page);
+        return std::nullopt;
+    }
+
+    if (!page) {
+        if (cur_pnum == PAGE_NIL) {
+            finished = true;
+            return std::nullopt;
+        }
+
+        page = NodePage{buf_mgr.fetch_page(fid, cur_pnum)};
+    }
+
+    if (cur_slot == page->slot_cnt()) {
+        cur_slot = 0;
+        cur_pnum = page->const_header_extra().next_page;
+        page = std::nullopt;
+        return next();
+    }
+
+    auto slot = page->read_slot(cur_slot);
+    Value key = page->read_data(slot);
+
+    if (key > pkey_high) {
+        finished = true;
+        page = std::nullopt;
+        return std::nullopt;
+    }
+
+    cur_slot += 1;
+
+    return slot.extra().rid;
+}
+
+RangeCursor BTreeIndex::range_search(const Value& pkey_low, const Value& pkey_high) {
+    auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
+    assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
+
+    pnum_t cur_page = file_hdr.root;
+
+    while (true) {
+        NodePage page{eng.buf_mgr.fetch_page(fid, cur_page)};
+        if (is_leaf(page.const_header_extra()))
+            break;
+
+        auto [_, fit_child] = inner_find_child(page, pkey_low);
+        cur_page = fit_child;
+    }
+
+    NodePage leaf_page{eng.buf_mgr.fetch_page(fid, cur_page)};
+
+    u32 start_slot = 0;
+
+    for (; start_slot < leaf_page.slot_cnt(); ++start_slot) {
+        auto slot = leaf_page.read_slot(start_slot);
+
+        if (leaf_page.read_data(slot) >= pkey_low)
+            break;
+    }
+
+    return RangeCursor{eng.buf_mgr, cur_page, start_slot, pkey_high};
 }

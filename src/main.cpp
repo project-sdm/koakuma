@@ -1,5 +1,4 @@
 #include <cassert>
-#include <cstdlib>
 #include <format>
 #include <print>
 #include "engine/engine.hpp"
@@ -23,15 +22,41 @@ int main() {
 
     index.init();
 
-    for (int i = 0; i < 100; ++i) {
-        std::println();
-        int key = std::rand() % 500;
-        std::println("inserting {}", key);
+    for (int i = 0; i < 20; ++i)
+        index.add(4 * i, Rid{static_cast<u32>(i), static_cast<u32>(i + 1)});
 
-        bool result = index.add(key, Rid{static_cast<u32>(2 * i), static_cast<u32>(3 * i)});
+    index.ugly_print();
 
-        index.ugly_print();
+    auto cursor = index.range_search(21, 100);
+    while (auto rid = cursor.next()) {
+        std::println("rid: {},{}", rid->pnum, rid->slot_idx);
     }
+
+    return 0;
+
+    index.remove(0);
+    index.remove(32);
+    index.remove(8);
+
+    // index.add(5, Rid{static_cast<u32>(4), static_cast<u32>(8)});
+    // index.add(6, Rid{static_cast<u32>(6), static_cast<u32>(7)});
+
+    // index.add(37, Rid{static_cast<u32>(4), static_cast<u32>(8)});
+    // index.add(38, Rid{static_cast<u32>(6), static_cast<u32>(7)});
+
+    index.ugly_print();
+    std::println();
+
+    std::println("removing 24");
+    index.remove(24);
+
+    index.ugly_print();
+    std::println();
+
+    std::println("removing 16");
+    index.remove(16);
+
+    index.ugly_print();
 
     // index.insert(12, Rid{123, 345});
 
