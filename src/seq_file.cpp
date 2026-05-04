@@ -1,7 +1,6 @@
 #include "seq_file.hpp"
 #include <cassert>
 #include <optional>
-#include <print>
 #include <utility>
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
