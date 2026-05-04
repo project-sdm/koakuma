@@ -222,7 +222,7 @@ u32 BTreeIndex::leaf_lower_bound_idx(const NodePage& page, const Value& pkey) {
     return ins_idx;
 }
 
-bool BTreeIndex::add(const Value& pkey, Rid rid) {
+void BTreeIndex::add(const Value& pkey, Rid rid) {
     auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
 
     assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
@@ -250,15 +250,12 @@ bool BTreeIndex::add(const Value& pkey, Rid rid) {
 
         ins_idx = leaf_lower_bound_idx(leaf_page, pkey);
 
-        if (ins_idx < leaf_page.slot_cnt() && leaf_page.read_data(ins_idx) == pkey)
-            return false;
-
         if (leaf_page.will_fit(pkey)) {
             // a non-overflowing insert NEVER causes inner node updates. I have
             // discovered a truly marvelous proof of this, which this comment
             // is too narrow to contain.
             leaf_page.insert(ins_idx, SlotExtra::leaf(rid), pkey);
-            return true;
+            return;
         }
     }
 
@@ -325,8 +322,6 @@ bool BTreeIndex::add(const Value& pkey, Rid rid) {
         file_hdr.root = new_root_pnum;
         eng.file_mgr.write_user_header(fid, file_hdr);
     }
-
-    return true;
 }
 
 void BTreeIndex::ugly_print() const {
@@ -586,6 +581,8 @@ std::optional<Rid> RangeCursor::next() {
         page = NodePage{buf_mgr.fetch_page(fid, cur_pnum)};
     }
 
+    assert(cur_slot <= page->slot_cnt());
+
     if (cur_slot == page->slot_cnt()) {
         cur_slot = 0;
         cur_pnum = page->const_header_extra().next_page;
@@ -603,7 +600,6 @@ std::optional<Rid> RangeCursor::next() {
     }
 
     cur_slot += 1;
-
     return slot.extra().rid;
 }
 

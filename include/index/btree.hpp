@@ -85,7 +85,7 @@ public:
     void ugly_print() const;
     void init();
 
-    bool add(const Value& pkey, Rid rid);
+    void add(const Value& pkey, Rid rid);
 
     [[nodiscard]] std::optional<Rid> search(const Value& pkey);
 
