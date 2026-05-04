@@ -1,6 +1,7 @@
 #ifndef SLOTTED_PAGE_HPP
 #define SLOTTED_PAGE_HPP
 
+#include <cassert>
 #include <stdexcept>
 #include <utility>
 #include "engine/buffer_manager.hpp"
@@ -132,7 +133,10 @@ public:
 
         u32 data_size = pack::pack_size(data);
 
-        if (free_space() < sizeof(Slot) + data_size)
+        // hack
+        assert(data_size <= total_space() - sizeof(Slot));
+
+        if (!will_fit(data))
             throw std::runtime_error("not enough space");
 
         is_dirty = true;
@@ -164,7 +168,6 @@ public:
     void update_data(u32 slot_idx, const Data& new_data) {
         Slot slot = read_slot(slot_idx);
         u32 data_size = pack::pack_size(new_data);
-
         is_dirty = true;
 
         if (data_size <= slot.len) {
@@ -192,7 +195,6 @@ public:
 
     void remove(u32 slot_idx) {
         assert(slot_idx < hdr.slot_cnt);
-
         is_dirty = true;
 
         // shift slots to the left
@@ -201,6 +203,16 @@ public:
             write_slot(i, slot);
         }
 
+        hdr.slot_cnt -= 1;
+    }
+
+    void swap_remove(u32 slot_idx) {
+        assert(slot_idx < hdr.slot_cnt);
+
+        auto last = read_slot(hdr.slot_cnt - 1);
+        write_slot(slot_idx, last);
+
+        is_dirty = true;
         hdr.slot_cnt -= 1;
     }
 };

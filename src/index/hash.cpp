@@ -1,0 +1,199 @@
+#include "index/hash.hpp"
+#include <cassert>
+#include <cstddef>
+#include <functional>
+#include <optional>
+#include <print>
+#include <variant>
+#include "engine/file_manager.hpp"
+#include "seq_file.hpp"
+#include "types.hpp"
+
+// largest depth that fits within a single page
+static constexpr u8 MAX_DEPTH = 8;
+
+HashIndex::HashIndex(Engine& eng, FileId fid)
+    : eng{eng},
+      fid{fid} {}
+
+void HashIndex::init() {
+    HashHeader hdr{};
+
+    pnum_t init_bucket = eng.file_mgr.alloc_page(fid);
+
+    {
+        BucketPage init_page{eng.buf_mgr.fetch_page(fid, init_bucket)};
+        init_page.init();
+        init_page.header_extra() = hdr.global_depth;
+    }
+
+    hdr.dir.push_back(init_bucket);
+    eng.file_mgr.write_user_header(fid, hdr);
+}
+
+void HashIndex::add(const Value& key, Rid rid) {
+    auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
+
+    std::size_t h_full = std::hash<Value>{}(key);
+    std::size_t h_part = h_full % (1 << file_hdr.global_depth);
+
+    pnum_t cur_pnum = file_hdr.dir[h_part];
+
+    while (true) {
+        BucketPage cur_bucket{eng.buf_mgr.fetch_page(fid, cur_pnum)};
+
+        // case 1: key fits
+        // the function ends here
+        if (cur_bucket.will_fit(key)) {
+            cur_bucket.push_back(SlotHeader{rid}, key);
+            return;
+        }
+
+        // case 2: this is a chained bucket
+        if (auto* next = std::get_if<pnum_t>(&cur_bucket.header_extra())) {
+            if (*next == PAGE_NIL) {
+                // we need to chain a new bucket
+                *next = eng.file_mgr.alloc_page(fid);
+
+                BucketPage new_bucket{eng.buf_mgr.fetch_page(fid, *next)};
+                new_bucket.init();
+                new_bucket.header_extra() = PAGE_NIL;
+            }
+
+            cur_pnum = *next;
+            continue;
+        }
+
+        // case 3: this is a non-overflowed main bucket
+
+        u8 local_depth = std::get<u8>(cur_bucket.const_header_extra());
+        u8 new_depth = local_depth + 1;
+
+        if (new_depth > MAX_DEPTH) {
+            // case 3.1: we can't split anymore.
+            // we need to begin a chain
+            cur_bucket.header_extra() = PAGE_NIL;
+            continue;
+        }
+
+        // case 3.2: we can split.
+
+        // increase global depth if necessary
+        if (new_depth > file_hdr.global_depth) {
+            file_hdr.global_depth = new_depth;
+            file_hdr.dir.insert(file_hdr.dir.begin(), file_hdr.dir.begin(), file_hdr.dir.end());
+        }
+
+        // split
+        pnum_t bucket_0 = eng.file_mgr.alloc_page(fid);
+        pnum_t bucket_1 = eng.file_mgr.alloc_page(fid);
+
+        {
+            BucketPage bucket_0_page{eng.buf_mgr.fetch_page(fid, bucket_0)};
+            bucket_0_page.init();
+            bucket_0_page.header_extra() = new_depth;
+
+            BucketPage bucket_1_page{eng.buf_mgr.fetch_page(fid, bucket_1)};
+            bucket_1_page.init();
+            bucket_1_page.header_extra() = new_depth;
+
+            for (u32 i = 0; i < cur_bucket.slot_cnt(); ++i) {
+                auto slot = cur_bucket.read_slot(i);
+                Value key = cur_bucket.read_data(slot);
+
+                std::size_t h = std::hash<Value>{}(key);
+
+                if ((h & (1 << local_depth)) == 0)
+                    bucket_0_page.push_back(slot.extra(), key);
+                else
+                    bucket_1_page.push_back(slot.extra(), key);
+            }
+        }
+
+        file_hdr.dir[h_part & ~(1 << local_depth)] = bucket_0;
+        file_hdr.dir[h_part | (1 << local_depth)] = bucket_1;
+        eng.file_mgr.write_user_header<HashHeader>(fid, file_hdr);
+
+        std::size_t h_part_new = h_full % (1 << file_hdr.global_depth);
+        cur_pnum = file_hdr.dir[h_part_new];
+    }
+}
+
+std::optional<Rid> HashIndex::search(const Value& pkey) {
+    auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
+
+    std::size_t h = std::hash<Value>{}(pkey) % (1 << file_hdr.global_depth);
+    pnum_t cur_bucket = file_hdr.dir[h];
+
+    while (cur_bucket != PAGE_NIL) {
+        BucketPage bucket_page{eng.buf_mgr.fetch_page(fid, cur_bucket)};
+
+        for (u32 i = 0; i < bucket_page.slot_cnt(); ++i) {
+            auto slot = bucket_page.read_slot(i);
+
+            if (pkey == bucket_page.read_data(slot))
+                return slot.extra().rid;
+        }
+
+        if (const auto* next = std::get_if<pnum_t>(&bucket_page.const_header_extra()))
+            cur_bucket = *next;
+        else
+            break;
+    }
+
+    return std::nullopt;
+}
+
+bool HashIndex::remove(const Value& pkey) {
+    auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
+
+    std::size_t h = std::hash<Value>{}(pkey) % (1 << file_hdr.global_depth);
+    pnum_t cur_bucket = file_hdr.dir[h];
+
+    while (cur_bucket != PAGE_NIL) {
+        BucketPage bucket_page{eng.buf_mgr.fetch_page(fid, cur_bucket)};
+
+        for (u32 i = 0; i < bucket_page.slot_cnt(); ++i) {
+            auto slot = bucket_page.read_slot(i);
+
+            if (pkey == bucket_page.read_data(slot)) {
+                bucket_page.swap_remove(i);
+                return true;
+            }
+        }
+
+        if (const auto* next = std::get_if<pnum_t>(&bucket_page.const_header_extra()))
+            cur_bucket = *next;
+        else
+            break;
+    }
+
+    return false;
+}
+
+void HashIndex::ugly_print() const {
+    auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
+
+    std::println("D = {}", file_hdr.global_depth);
+    for (std::size_t i = 0; i < file_hdr.dir.size(); ++i) {
+        std::print("Bucket {}: ", i);
+
+        pnum_t cur_bucket = file_hdr.dir[i];
+
+        while (cur_bucket != PAGE_NIL) {
+            std::print("-> ");
+
+            BucketPage bucket_page{eng.buf_mgr.fetch_page(fid, cur_bucket)};
+
+            for (u32 i = 0; i < bucket_page.slot_cnt(); ++i)
+                std::print("{} ", bucket_page.read_data(i));
+
+            if (const auto* next = std::get_if<pnum_t>(&bucket_page.const_header_extra()))
+                cur_bucket = *next;
+            else
+                break;
+        }
+
+        std::println();
+    }
+}
