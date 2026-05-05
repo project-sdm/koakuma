@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdio>
 #include <format>
+#include <functional>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 #include "engine/buffer_manager.hpp"

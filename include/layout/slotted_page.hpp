@@ -54,7 +54,7 @@ public:
 
     explicit SlottedPage(PageGuard page)
         : page{std::move(page)},
-          hdr{util::span_read<Header>(page.const_data(), 0)} {}
+          hdr{util::span_read<Header>(this->page.const_data(), 0)} {}
 
     SlottedPage(const SlottedPage&) = delete;
     SlottedPage(SlottedPage&&) = default;

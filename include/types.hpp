@@ -26,12 +26,8 @@ using f32 = float;
 static_assert(sizeof(f32) == 32 / CHAR_BIT);
 #endif
 
-#ifdef __STDCPP_FLOAT64_T__
-using f64 = std::float64_t;
-#else
 using f64 = double;
 static_assert(sizeof(f64) == 64 / CHAR_BIT);
-#endif
 
 #ifdef __STDCPP_FLOAT128_T__
 using f128 = std::float128_t;
