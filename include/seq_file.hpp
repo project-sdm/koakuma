@@ -4,15 +4,13 @@
 #include <cstddef>
 #include <cstdio>
 #include <format>
-#include <functional>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <variant>
 #include <vector>
-#include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
+#include "layout/slotted_page.hpp"
 #include "pack.hpp"
 #include "types.hpp"
 
@@ -28,9 +26,9 @@ struct Rid {
 };
 
 static constexpr pnum_t PAGE_NIL = -1;
-static const Rid RID_NIL = Rid{PAGE_NIL, 0};
 
 using Value = std::variant<int, bool, f64, std::string>;
+using HashValue = std::variant<int, bool, std::string>;
 using Row = std::vector<Value>;
 
 enum class ColumnType : u8 {
@@ -110,28 +108,16 @@ struct pack::Unpack<SeqHeader> {
 
 class SeqFile {
 private:
-    struct PageHeader {
-        u32 slot_cnt = 0;
-        u32 data_begin = PAGE_SIZE;
-    };
+    struct PageHeader {};
 
-    struct Slot {
-        u32 pos;
-        u32 len;
+    struct SlotExtra {
         bool active;
-
-        Slot(u32 pos, u32 len, bool active);
     };
+
+    using SeqPage = SlottedPage<PageHeader, SlotExtra, Row>;
 
     Engine& eng;
     FileId fid;
-
-    [[nodiscard]] static u32 slot_offset(u32 slot_idx);
-
-    [[nodiscard]] static Slot read_slot(const BufferManager::PageGuard& page, u32 slot_idx);
-    [[nodiscard]] static Row read_row(const BufferManager::PageGuard& page, u32 slot_idx);
-    [[nodiscard]] static Row read_row(const BufferManager::PageGuard& page, const Slot& slot);
-    static void write_slot(const BufferManager::PageGuard& page, u32 slot_idx, const Slot& slot);
 
     [[nodiscard]] std::optional<pnum_t> find_main_page_by_pkey(const Value& pkey);
     [[nodiscard]] std::optional<Rid> find_by_pkey_in_main_pages(const Value& pkey);
@@ -146,7 +132,7 @@ private:
 public:
     class Cursor {
         SeqFile& seq_file;
-        std::optional<BufferManager::PageGuard> cur_page = std::nullopt;
+        std::optional<SeqPage> page = std::nullopt;
         u32 cur_slot = 0;
         pnum_t cur_pnum = 1;
 
@@ -169,11 +155,9 @@ public:
 
     [[nodiscard]] Meta read_meta();
 
-    [[nodiscard]] Row read_row(Rid rid);
-
-    std::optional<Rid> insert(const Row& row);
-    [[nodiscard]] std::optional<Row> find_by_pkey(const Value& pkey);
-    std::optional<Rid> delete_by_pkey(const Value& pkey);
+    std::optional<Rid> add(const Row& row);
+    [[nodiscard]] std::optional<Row> search(const Value& pkey);
+    std::optional<Rid> remove(const Value& pkey);
 
     Cursor cursor();
 };
@@ -185,6 +169,17 @@ struct std::formatter<Value, char> {
     }
 
     static auto format(const Value& val, std::format_context& ctx) {
+        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
+    }
+};
+
+template<>
+struct std::formatter<HashValue, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const HashValue& val, std::format_context& ctx) {
         return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
     }
 };
