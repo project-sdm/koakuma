@@ -7,6 +7,29 @@ set(CMAKE_CXX_STANDARD_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
+# ── Embed frontend HTML ───────────────────────────────────────────────────────
+set(FRONTEND_HTML_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/api/frontend.html")
+set(FRONTEND_VENDOR   "${CMAKE_CURRENT_SOURCE_DIR}/src/api/vendor")
+set(FRONTEND_HPP_GEN  "${CMAKE_CURRENT_BINARY_DIR}/generated/api/frontend.hpp")
+
+file(GLOB FRONTEND_VENDOR_FILES "${FRONTEND_VENDOR}/*")
+
+add_custom_command(
+    OUTPUT  "${FRONTEND_HPP_GEN}"
+    COMMAND "${CMAKE_COMMAND}"
+            -D "INPUT=${FRONTEND_HTML_SRC}"
+            -D "VENDOR_DIR=${FRONTEND_VENDOR}"
+            -D "OUTPUT=${FRONTEND_HPP_GEN}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_html.cmake"
+    DEPENDS "${FRONTEND_HTML_SRC}"
+            ${FRONTEND_VENDOR_FILES}
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_html.cmake"
+    COMMENT "Embedding frontend.html -> generated/api/frontend.hpp"
+    VERBATIM
+)
+
+add_custom_target(generate_frontend DEPENDS "${FRONTEND_HPP_GEN}")
+
 add_executable(koakuma
   src/api/rest_server.cpp
   src/catalog.cpp
@@ -27,7 +50,10 @@ add_executable(koakuma
   src/seq_file.cpp
 )
 
+add_dependencies(koakuma generate_frontend)
+
 target_include_directories(koakuma
+  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
   PRIVATE external
   PRIVATE include
 )

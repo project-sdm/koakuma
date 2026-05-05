@@ -4,28 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Koakuma SQL Console</title>
+
+    <!-- @vendor-css -->
+
     <style>
         :root {
-            --bg: #f4f1ea;
-            --panel: #fffdf9;
-            --panel-border: #ded6c8;
-            --text: #1f2328;
-            --muted: #67635d;
-            --accent: #4f6f52;
-            --accent-hover: #3f5c42;
-            --success-bg: #eef5ee;
+            --bg:             #f4f1ea;
+            --panel:          #fffdf9;
+            --panel-border:   #ded6c8;
+            --text:           #1f2328;
+            --muted:          #67635d;
+            --accent:         #4f6f52;
+            --accent-hover:   #3f5c42;
+            --success-bg:     #eef5ee;
             --success-border: #c9ddca;
-            --error-bg: #fbefef;
-            --error-border: #e3c2c2;
+            --error-bg:       #fbefef;
+            --error-border:   #e3c2c2;
         }
 
+        /* ── Reset ───────────────────────────────────────────────── */
         * { box-sizing: border-box; }
 
+        /* ── Layout ──────────────────────────────────────────────── */
         body {
             margin: 0;
             min-height: 100vh;
             background:
-                radial-gradient(circle at top left, rgba(255, 255, 255, 0.6), transparent 35%),
+                radial-gradient(circle at top left, rgba(255,255,255,.6), transparent 35%),
                 linear-gradient(180deg, #ece6dc 0%, var(--bg) 100%);
             color: var(--text);
             font-family: "Segoe UI", "Trebuchet MS", sans-serif;
@@ -38,21 +43,21 @@
             background: var(--panel);
             border: 1px solid var(--panel-border);
             border-radius: 14px;
-            box-shadow: 0 10px 30px rgba(31, 35, 40, 0.08);
+            box-shadow: 0 10px 30px rgba(31,35,40,.08);
             overflow: hidden;
         }
 
         .header {
             padding: 28px 30px 18px;
-            border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+            border-bottom: 1px solid rgba(31,35,40,.08);
         }
 
         h1 {
             margin: 0;
             font-size: 30px;
-            line-height: 1.1;
             font-weight: 700;
-            letter-spacing: -0.02em;
+            line-height: 1.1;
+            letter-spacing: -.02em;
         }
 
         .subtitle {
@@ -61,9 +66,7 @@
             font-size: 15px;
         }
 
-        .content {
-            padding: 28px 30px 32px;
-        }
+        .content { padding: 28px 30px 32px; }
 
         label {
             display: block;
@@ -72,26 +75,74 @@
             font-weight: 600;
         }
 
-        textarea {
-            width: 100%;
-            min-height: 170px;
-            padding: 14px 16px;
+        /* ── CodeMirror overrides ────────────────────────────────── */
+        .CodeMirror {
             border: 1px solid #cfc7b8;
             border-radius: 10px;
-            background: #fff;
-            color: var(--text);
             font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
             font-size: 14px;
-            line-height: 1.45;
-            resize: vertical;
+            line-height: 1.6;
+            height: auto;
+            min-height: 170px;
+            background: #fff;
+            color: var(--text);
+            transition: border-color .15s, box-shadow .15s;
+        }
+
+        .CodeMirror-focused {
+            border-color: rgba(79,111,82,.75);
+            box-shadow: 0 0 0 3px rgba(79,111,82,.12);
             outline: none;
         }
 
-        textarea:focus {
-            border-color: rgba(79, 111, 82, 0.75);
-            box-shadow: 0 0 0 3px rgba(79, 111, 82, 0.12);
+        .CodeMirror-scroll { min-height: 170px; }
+
+        .CodeMirror-gutters {
+            border-right: 1px solid #e8e2d8;
+            background: #faf8f3;
+            border-radius: 10px 0 0 10px;
         }
 
+        .CodeMirror-linenumber { color: #9a9690; }
+
+        .CodeMirror-activeline-background { background: rgba(79,111,82,.04); }
+
+        .CodeMirror-selected { background: rgba(79,111,82,.18) !important; }
+
+        /* ── SQL syntax colors ───────────────────────────────────── */
+        .cm-s-default .cm-keyword  { color: #0057ae; font-weight: 600; }
+        .cm-s-default .cm-atom     { color: #0057ae; }
+        .cm-s-default .cm-type     { color: #6d28d9; }
+        .cm-s-default .cm-builtin  { color: #6d28d9; }
+        .cm-s-default .cm-string   { color: #c2410c; }
+        .cm-s-default .cm-string-2 { color: #c2410c; }
+        .cm-s-default .cm-number   { color: #0891b2; }
+        .cm-s-default .cm-comment  { color: #6b7280; font-style: italic; }
+        .cm-s-default .cm-operator { color: #374151; }
+
+        /* ── Autocomplete dropdown ────────────────────────────────── */
+        .CodeMirror-hints {
+            border: 1px solid #d8d2c6;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(31,35,40,.12);
+            font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+            font-size: 13px;
+            background: #fff;
+            padding: 4px;
+        }
+
+        .CodeMirror-hint {
+            padding: 4px 10px;
+            border-radius: 4px;
+            color: var(--text);
+        }
+
+        li.CodeMirror-hint-active {
+            background: rgba(79,111,82,.15);
+            color: var(--text);
+        }
+
+        /* ── Buttons ─────────────────────────────────────────────── */
         .button-row {
             display: flex;
             gap: 12px;
@@ -107,28 +158,14 @@
             cursor: pointer;
         }
 
-        .btn-execute {
-            background: var(--accent);
-            color: #fff;
-            flex: 1;
-        }
+        .btn-execute { background: var(--accent); color: #fff; flex: 1; }
+        .btn-execute:hover { background: var(--accent-hover); }
 
-        .btn-execute:hover {
-            background: var(--accent-hover);
-        }
+        .btn-clear { background: #ece7df; color: #2c2a27; }
+        .btn-clear:hover { background: #e2dbd0; }
 
-        .btn-clear {
-            background: #ece7df;
-            color: #2c2a27;
-        }
-
-        .btn-clear:hover {
-            background: #e2dbd0;
-        }
-
-        .results {
-            margin-top: 26px;
-        }
+        /* ── Results ─────────────────────────────────────────────── */
+        .results { margin-top: 26px; }
 
         .result-box {
             border: 1px solid #d8d2c6;
@@ -145,23 +182,20 @@
             line-height: 1.5;
         }
 
-        .result-summary {
-            margin: 0 0 12px;
-            white-space: normal;
-            font-weight: 600;
-        }
+        .result-box.success { background: var(--success-bg); border-color: var(--success-border); }
+        .result-box.error   { background: var(--error-bg);   border-color: var(--error-border); color: #8a2d2d; }
+        .result-box.loading { color: var(--muted); font-style: italic; }
 
-        .result-table-wrap {
-            overflow-x: auto;
-        }
+        .result-summary { margin: 0 0 12px; white-space: normal; font-weight: 600; }
+
+        .result-table-wrap { overflow-x: auto; }
 
         .result-table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 100%;
             white-space: normal;
             background: #fff;
-            border: 1px solid rgba(31, 35, 40, 0.12);
+            border: 1px solid rgba(31,35,40,.12);
             border-radius: 8px;
             overflow: hidden;
         }
@@ -170,48 +204,15 @@
         .result-table td {
             padding: 10px 12px;
             text-align: left;
-            border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+            border-bottom: 1px solid rgba(31,35,40,.08);
             vertical-align: top;
         }
 
-        .result-table th {
-            background: rgba(79, 111, 82, 0.08);
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .result-table tbody tr:last-child td {
-            border-bottom: 0;
-        }
-
-        .result-table td.is-null {
-            color: var(--muted);
-            font-style: italic;
-        }
-
-        .result-box.success {
-            background: var(--success-bg);
-            border-color: var(--success-border);
-        }
-
-        .result-box.error {
-            background: var(--error-bg);
-            border-color: var(--error-border);
-            color: #8a2d2d;
-        }
+        .result-table th { background: rgba(79,111,82,.08); font-weight: 700; }
+        .result-table tbody tr:last-child td { border-bottom: 0; }
+        .result-table td.is-null { color: var(--muted); font-style: italic; }
 
         .hidden { display: none; }
-
-        .loading {
-            color: var(--muted);
-            font-style: italic;
-        }
-
-        .result-title {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 700;
-        }
 
         @media (max-width: 640px) {
             body { padding: 12px; }
@@ -229,225 +230,196 @@
 
         <section class="content">
             <div>
-                <label for="sqlInput">SQL Query</label>
-                <textarea id="sqlInput" placeholder="Example: SELECT * FROM users WHERE name = 'Alice';"></textarea>
+                <label for="editorMount">SQL Query</label>
+                <div id="editorMount"></div>
                 <div class="button-row">
-                    <button type="button" class="btn-execute" data-action="execute">Execute Query</button>
-                    <button type="button" class="btn-clear" data-action="clear">Clear</button>
+                    <button type="button" class="btn-execute" id="btnExecute">Execute Query</button>
+                    <button type="button" class="btn-clear"   id="btnClear">Clear</button>
                 </div>
             </div>
 
             <div class="results hidden" id="resultsSection">
                 <label>Results</label>
-                <div class="result-box" id="resultBox"></div>
+                <div class="result-box" id="resultBox" role="region" aria-live="polite"></div>
             </div>
         </section>
     </main>
 
+    <!-- @vendor-js -->
+
     <script>
-        const API = Object.freeze({
-            queryPath: '/query'
+        'use strict';
+
+        // ── Constants ─────────────────────────────────────────────
+
+        const API_QUERY_PATH = '/query';
+
+        const HINT_TRIGGER_PATTERN = /[a-zA-Z_]/;
+
+        // ── CodeMirror setup ──────────────────────────────────────
+
+        const editor = CodeMirror(document.getElementById('editorMount'), {
+            mode:              'text/x-sql',
+            lineNumbers:       true,
+            matchBrackets:     true,
+            autoCloseBrackets: true,
+            styleActiveLine:   true,
+            lineWrapping:      true,
+            tabSize:           4,
+            indentWithTabs:    false,
+            extraKeys: {
+                'Ctrl-Enter': executeQuery,
+                'Cmd-Enter':  executeQuery,
+                'Ctrl-Space': 'autocomplete',
+                Tab: (cm) => cm.execCommand('insertSoftTab'),
+            },
+            hintOptions: { completeSingle: false, alignWithWord: true },
         });
 
-        const DOM = Object.freeze({
-            sqlInput: 'sqlInput',
-            resultsSection: 'resultsSection',
-            resultBox: 'resultBox',
-            executeButton: '[data-action="execute"]',
-            clearButton: '[data-action="clear"]'
-        });
-
-        const TEXT = Object.freeze({
-            emptyQuery: 'Please enter a query.',
-            runningQuery: 'Running query...',
-            success: 'Success',
-            error: 'Error',
-            noRowsReturned: 'No rows returned.',
-            networkErrorPrefix: 'Network error: '
-        });
-
-        const RESULT_STATE_CLASS = Object.freeze({
-            loading: 'result-box loading',
-            success: 'result-box success',
-            error: 'result-box error'
-        });
-
-        function createTextCell(tagName, value, className = '') {
-            const cell = document.createElement(tagName);
-            if (className) {
-                cell.className = className;
+        editor.on('inputRead', (cm, change) => {
+            if (HINT_TRIGGER_PATTERN.test(change.text[0])) {
+                cm.showHint({ completeSingle: false });
             }
+        });
 
-            cell.textContent = value;
-            return cell;
-        }
+        // ── DOM helpers ───────────────────────────────────────────
 
         function getElement(id) {
-            const element = document.getElementById(id);
-            if (!element) {
-                throw new Error(`Missing expected element: ${id}`);
-            }
-
-            return element;
+            const el = document.getElementById(id);
+            if (!el) throw new Error(`Element not found: #${id}`);
+            return el;
         }
 
-        function getUi() {
-            return {
-                sqlInput: getElement(DOM.sqlInput),
-                resultsSection: getElement(DOM.resultsSection),
-                resultBox: getElement(DOM.resultBox),
-                executeButton: document.querySelector(DOM.executeButton),
-                clearButton: document.querySelector(DOM.clearButton)
-            };
+        function createCell(tag, text, className) {
+            const el = document.createElement(tag);
+            if (className) el.className = className;
+            el.textContent = text;
+            return el;
         }
 
-        function setResultState(resultBox, state) {
-            resultBox.className = RESULT_STATE_CLASS[state];
+        function getColumnName(col, index) {
+            return col?.name?.trim() || `Column ${index + 1}`;
         }
 
-        function clearResultBox(resultBox) {
-            resultBox.textContent = '';
-            resultBox.className = 'result-box';
+        function formatValue(value) {
+            if (value === null || value === undefined) return 'NULL';
+            return typeof value === 'string' ? value : String(value);
         }
 
-        function getColumnName(column, index) {
-            if (column && typeof column.name === 'string' && column.name.trim()) {
-                return column.name;
-            }
+        // ── Result rendering ──────────────────────────────────────
 
-            return `Column ${index + 1}`;
+        function setResultState(box, state) {
+            box.className = `result-box ${state}`;
         }
 
-        function formatCellValue(value) {
-            if (value === null || value === undefined) {
-                return 'NULL';
-            }
-
-            if (typeof value === 'string') {
-                return value;
-            }
-
-            return String(value);
-        }
-
-        function renderSuccessPayload(resultBox, data) {
-            resultBox.textContent = '';
+        function renderSuccess(box, data) {
+            box.textContent = '';
 
             const summary = document.createElement('p');
             summary.className = 'result-summary';
-            summary.textContent = `${TEXT.success} | Accepted statements: ${data.acceptedStatements} | Parse time: ${data.timingMs.parse} ms | Execution time: ${data.timingMs.exec} ms`;
-            resultBox.append(summary);
+            const io = data.diskIO ?? { reads: '?', writes: '?' };
+            summary.textContent =
+                `Success | Statements: ${data.acceptedStatements} | ` +
+                `Parse: ${data.timingMs.parse} ms | Exec: ${data.timingMs.exec} ms | ` +
+                `Disk reads: ${io.reads} | Disk writes: ${io.writes}`;
+            box.appendChild(summary);
 
             const rows = Array.isArray(data.rows) ? data.rows : [];
             if (rows.length === 0) {
                 const empty = document.createElement('div');
-                empty.textContent = TEXT.noRowsReturned;
-                resultBox.append(empty);
+                empty.textContent = 'No rows returned.';
+                box.appendChild(empty);
                 return;
             }
 
-            const columns = Array.isArray(data.columns) ? data.columns : [];
-            const columnCount = Math.max(columns.length, rows[0]?.length ?? 0);
+            const columns   = Array.isArray(data.columns) ? data.columns : [];
+            const colCount  = Math.max(columns.length, rows[0]?.length ?? 0);
+            const wrap      = document.createElement('div');
+            const table     = document.createElement('table');
+            const thead     = document.createElement('thead');
+            const headerRow = document.createElement('tr');
 
-            const wrap = document.createElement('div');
-            wrap.className = 'result-table-wrap';
-
-            const table = document.createElement('table');
+            wrap.className  = 'result-table-wrap';
             table.className = 'result-table';
 
-            const thead = document.createElement('thead');
-            const headerRow = document.createElement('tr');
-            for (let i = 0; i < columnCount; ++i) {
-                headerRow.append(createTextCell('th', getColumnName(columns[i], i)));
+            for (let i = 0; i < colCount; i++) {
+                headerRow.appendChild(createCell('th', getColumnName(columns[i], i)));
             }
-            thead.append(headerRow);
+            thead.appendChild(headerRow);
 
             const tbody = document.createElement('tbody');
             rows.forEach((row) => {
                 const tr = document.createElement('tr');
-                for (let i = 0; i < columnCount; ++i) {
+                for (let i = 0; i < colCount; i++) {
                     const value = row?.[i];
-                    const cell = createTextCell('td', formatCellValue(value), value === null || value === undefined ? 'is-null' : '');
-                    tr.append(cell);
+                    const isNull = value === null || value === undefined;
+                    tr.appendChild(createCell('td', formatValue(value), isNull ? 'is-null' : ''));
                 }
-                tbody.append(tr);
+                tbody.appendChild(tr);
             });
 
             table.append(thead, tbody);
-            wrap.append(table);
-            resultBox.append(wrap);
+            wrap.appendChild(table);
+            box.appendChild(wrap);
         }
 
-        function formatErrorPayload(error) {
-            let output = `${TEXT.error}\n`;
-            output += `Code: ${error.code}\n`;
-            output += `Message: ${error.message}\n`;
-
-            if (error.detail) {
-                output += `Detail: ${error.detail}\n`;
-            }
-
-            return output;
+        function renderError(box, error) {
+            let text = `Error\nCode: ${error.code}\nMessage: ${error.message}`;
+            if (error.detail) text += `\nDetail: ${error.detail}`;
+            box.textContent = text;
         }
+
+        // ── Actions ───────────────────────────────────────────────
 
         async function executeQuery() {
-            const ui = getUi();
-            const query = ui.sqlInput.value.trim();
+            const query          = editor.getValue().trim();
+            const resultsSection = getElement('resultsSection');
+            const resultBox      = getElement('resultBox');
 
             if (!query) {
-                window.alert(TEXT.emptyQuery);
+                window.alert('Please enter a SQL query.');
                 return;
             }
 
-            ui.resultsSection.classList.remove('hidden');
-            ui.resultBox.textContent = TEXT.runningQuery;
-            setResultState(ui.resultBox, 'loading');
+            resultsSection.classList.remove('hidden');
+            resultBox.textContent = 'Running query…';
+            setResultState(resultBox, 'loading');
 
             try {
-                const response = await fetch(API.queryPath, {
-                    method: 'POST',
-                    body: query,
-                    headers: {
-                        'Content-Type': 'text/plain'
-                    }
+                const response = await fetch(API_QUERY_PATH, {
+                    method:  'POST',
+                    body:    query,
+                    headers: { 'Content-Type': 'text/plain' },
                 });
 
                 const payload = await response.json();
 
                 if (payload.status === 'success') {
-                    renderSuccessPayload(ui.resultBox, payload.data);
-                    setResultState(ui.resultBox, 'success');
+                    renderSuccess(resultBox, payload.data);
+                    setResultState(resultBox, 'success');
                 } else {
-                    ui.resultBox.textContent = formatErrorPayload(payload.error);
-                    setResultState(ui.resultBox, 'error');
+                    renderError(resultBox, payload.error);
+                    setResultState(resultBox, 'error');
                 }
-            } catch (error) {
-                ui.resultBox.textContent = `${TEXT.networkErrorPrefix}${error.message}`;
-                setResultState(ui.resultBox, 'error');
+            } catch (err) {
+                resultBox.textContent = `Network error: ${err.message}`;
+                setResultState(resultBox, 'error');
             }
         }
 
         function clearAll() {
-            const ui = getUi();
-            ui.sqlInput.value = '';
-            ui.resultsSection.classList.add('hidden');
-            clearResultBox(ui.resultBox);
-            ui.sqlInput.focus();
+            editor.setValue('');
+            editor.focus();
+            getElement('resultsSection').classList.add('hidden');
+            const box = getElement('resultBox');
+            box.textContent = '';
+            box.className = 'result-box';
         }
 
-        function initApp() {
-            const ui = getUi();
+        // ── Init ──────────────────────────────────────────────────
 
-            ui.executeButton?.addEventListener('click', executeQuery);
-            ui.clearButton?.addEventListener('click', clearAll);
-            ui.sqlInput.addEventListener('keydown', (event) => {
-                if (event.ctrlKey && event.key === 'Enter') {
-                    executeQuery();
-                }
-            });
-        }
-
-        document.addEventListener('DOMContentLoaded', initApp);
+        getElement('btnExecute').addEventListener('click', executeQuery);
+        getElement('btnClear').addEventListener('click', clearAll);
     </script>
 </body>
 </html>
