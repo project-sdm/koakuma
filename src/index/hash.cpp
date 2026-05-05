@@ -33,10 +33,10 @@ void HashIndex::init() {
     eng.file_mgr.write_user_header(fid, hdr);
 }
 
-void HashIndex::add(const Value& key, Rid rid) {
+void HashIndex::add(const HashValue& key, Rid rid) {
     auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
 
-    std::size_t h_full = std::hash<Value>{}(key);
+    std::size_t h_full = std::hash<HashValue>{}(key);
     std::size_t h_part = h_full % (1 << file_hdr.global_depth);
 
     pnum_t cur_pnum = file_hdr.dir[h_part];
@@ -107,9 +107,9 @@ void HashIndex::add(const Value& key, Rid rid) {
             bucket_1_page.header_extra() = new_depth;
 
             for (u32 i = 0; i < cur_bucket.slot_cnt(); ++i) {
-                Value key = cur_bucket.read_data(i);
+                HashValue key = cur_bucket.read_data(i);
 
-                std::size_t h = std::hash<Value>{}(key);
+                std::size_t h = std::hash<HashValue>{}(key);
 
                 auto extra = cur_bucket.read_slot_extra(i);
 
@@ -131,19 +131,19 @@ void HashIndex::add(const Value& key, Rid rid) {
     }
 }
 
-HashIndex::Cursor HashIndex::search(const Value& key) {
+HashIndex::Cursor HashIndex::search(const HashValue& key) {
     auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
 
-    std::size_t h = std::hash<Value>{}(key);
+    std::size_t h = std::hash<HashValue>{}(key);
     std::size_t h_part = h % (1 << file_hdr.global_depth);
 
     return Cursor{eng.buf_mgr, fid, file_hdr.dir[h_part], key};
 }
 
-bool HashIndex::remove(const Value& key) {
+bool HashIndex::remove(const HashValue& key) {
     auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
 
-    std::size_t h = std::hash<Value>{}(key) % (1 << file_hdr.global_depth);
+    std::size_t h = std::hash<HashValue>{}(key) % (1 << file_hdr.global_depth);
     pnum_t cur_bucket = file_hdr.dir[h];
 
     while (cur_bucket != PAGE_NIL) {
@@ -192,7 +192,7 @@ void HashIndex::ugly_print() const {
     }
 }
 
-HashIndex::Cursor::Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, Value search_key)
+HashIndex::Cursor::Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, HashValue search_key)
     : fid{fid},
       buf_mgr{buf_mgr},
       cur_pnum{init_pnum},
@@ -220,7 +220,7 @@ std::optional<Rid> HashIndex::Cursor::next() {
             continue;
         }
 
-        Value key = page->read_data(cur_slot);
+        HashValue key = page->read_data(cur_slot);
         auto extra = page->read_slot_extra(cur_slot);
 
         cur_slot += 1;

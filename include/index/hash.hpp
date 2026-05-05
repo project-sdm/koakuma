@@ -29,7 +29,7 @@ private:
     Engine& eng;
     FileId fid;
 
-    using BucketPage = SlottedPage<BucketHeader, SlotHeader, Value>;
+    using BucketPage = SlottedPage<BucketHeader, SlotHeader, HashValue>;
 
     friend struct pack::PackSize<HashHeader>;
     friend struct pack::Pack<HashHeader>;
@@ -43,10 +43,10 @@ public:
         BufferManager& buf_mgr;
         pnum_t cur_pnum;
         u32 cur_slot = 0;
-        Value search_key;
+        HashValue search_key;
 
     public:
-        Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, Value search_key);
+        Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, HashValue search_key);
 
         std::optional<Rid> next();
     };
@@ -55,11 +55,11 @@ public:
 
     void init();
 
-    void add(const Value& pkey, Rid rid);
+    void add(const HashValue& pkey, Rid rid);
 
-    [[nodiscard]] Cursor search(const Value& pkey);
+    [[nodiscard]] Cursor search(const HashValue& pkey);
 
-    bool remove(const Value& pkey);
+    bool remove(const HashValue& pkey);
 
     void ugly_print() const;
 };
