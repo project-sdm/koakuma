@@ -28,12 +28,13 @@ struct Rid {
 static constexpr pnum_t PAGE_NIL = -1;
 static const Rid RID_NIL = Rid{PAGE_NIL, 0};
 
-using Value = std::variant<int, bool, std::string>;
+using Value = std::variant<int, bool, f64, std::string>;
 using Row = std::vector<Value>;
 
 enum class ColumnType : u8 {
     INT,
     BOOL,
+    FLOAT,
     STRING,
 };
 

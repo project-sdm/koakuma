@@ -90,6 +90,16 @@ namespace volcano {
 
             return false;
         }
+        bool operator()(f64 value) {
+            if (auto* filter = std::get_if<parser::EqFilter>(&data))
+                if (auto* value_to_compare = std::get_if<f64>(&filter->value))
+                    return value == *value_to_compare;
+
+            if (auto* filter = std::get_if<parser::RangeFilter>(&data))
+                return filter->min_val <= value && value <= filter->max_val;
+
+            return false;
+        }
         bool operator()(bool value) {
             if (auto* filter = std::get_if<parser::EqFilter>(&data))
                 if (auto* value_to_compare = std::get_if<bool>(&filter->value))
@@ -148,8 +158,9 @@ namespace {
             case DataType::Uuid:
                 return ColumnType::STRING;
             case DataType::Int:
+                return ColumnType::INT;
             case DataType::Real:
-                return ColumnType::INT;  // TODO: add float type
+                return ColumnType::FLOAT;
             case DataType::Varchar:
                 return ColumnType::STRING;
         }
@@ -161,7 +172,7 @@ namespace {
             return expr;
         }
         Value operator()(Number expr) {
-            return static_cast<int>(expr.value);
+            return expr.value;
         }
         Value operator()(const Literal& expr) {
             return expr.value;
@@ -183,11 +194,13 @@ namespace {
 QueryExecutor::QueryExecutor(Engine& engine)
     : engine{engine} {}
 
-void QueryExecutor::exec(const parser::SourceFile& source_file) {
-    Executor executor{engine};
+u32 QueryExecutor::exec(const parser::SourceFile& source_file, RowSink& sink) {
+    Executor executor{engine, sink};
 
     for (const auto& stmt : source_file.statements)
         std::visit(executor, stmt);
+
+    return static_cast<u32>(source_file.statements.size());
 }
 
 void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) const {
@@ -218,12 +231,14 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
     }
 }
 
-void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) const {
+void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) {
     auto table = catalog::get_table(engine, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;
     }
+
+    sink.on_columns(table->get_meta().columns);
 
     auto root = volcano::VolcanoIterator{volcano::SeqScan{table->cursor()}};
 
@@ -235,7 +250,7 @@ void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) co
     }
 
     while (auto row = root.next())
-        std::println("{}", *row);  // in general, do stuff with result
+        sink.on_row(*row);
 }
 
 void QueryExecutor::Executor::operator()(const parser::InsertStatement& stmt) const {

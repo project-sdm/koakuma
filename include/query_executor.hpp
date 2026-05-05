@@ -3,19 +3,27 @@
 
 #include "engine/engine.hpp"
 #include "parser/ast.hpp"
+#include "seq_file.hpp"
 
 class QueryExecutor {
 public:
+    struct RowSink {
+        virtual void on_columns(const std::vector<Column>& columns) {}
+        virtual void on_row(const Row& row) = 0;
+        virtual ~RowSink() = default;
+    };
+
     explicit QueryExecutor(Engine& engine);
 
-    void exec(const parser::SourceFile& source_file);
+    u32 exec(const parser::SourceFile& source_file, RowSink& sink);
 
 private:
     struct Executor {
         Engine& engine;
+        RowSink& sink;
 
         void operator()(const parser::CreateStatement& stmt) const;
-        void operator()(const parser::SelectStatement& stmt) const;
+        void operator()(const parser::SelectStatement& stmt);
         void operator()(const parser::InsertStatement& stmt) const;
         void operator()(const parser::DeleteStatement& stmt) const;
     };
