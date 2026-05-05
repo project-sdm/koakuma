@@ -17,8 +17,9 @@ int main() {
     std::println("Page size: {}", PAGE_SIZE);
     std::println();
 
-    Engine eng{};
-
+    /*
+    
+    Engine eng{};    
     auto fid = eng.file_mgr.open_create("hello.index.bin");
     HashIndex index{eng, fid};
 
@@ -68,9 +69,11 @@ int main() {
     // index.insert(12, Rid{123, 345});
 
     eng.file_mgr.close(fid);
+    */
 
-    std::println("starting koakuma REST API server...");
-    return api::run_rest_server();
-
-    return 0;
+    api::ServerConfig cfg{};
+    std::println("REST API  ->  http://localhost:{}/query", cfg.port);
+    std::println("Frontend  ->  http://localhost:{}/", cfg.port);
+    std::println();
+    return api::run_rest_server(cfg);
 }
