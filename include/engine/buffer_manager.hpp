@@ -117,6 +117,9 @@ public:
     bool flush_page(const PageId& pid);
 
     void flush_all();
+
+    u64 page_reads = 0;
+    u64 page_writes = 0;
 };
 
 #endif

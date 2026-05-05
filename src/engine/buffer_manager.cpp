@@ -153,6 +153,7 @@ auto BufferManager::fetch_page(const FileId& fid, pnum_t pnum) -> PageGuard {
     }
 
     // Miss
+    ++page_reads;
     std::size_t frame_num = obtain_free_frame();
     lru_list.push_front(pid);
     page_table.try_emplace(pid, frame_num);
@@ -170,6 +171,7 @@ bool BufferManager::flush_page(const PageId& pid) {
         return false;
 
     file_mgr.write_page(pid.fid, pid.pnum, frame_span(frame_num));
+    ++page_writes;
     meta.is_dirty = false;
     return true;
 }

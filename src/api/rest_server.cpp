@@ -2,9 +2,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
-#include <exception>
 #include <format>
-#include <memory>
 #include <print>
 #include <string>
 #include <string_view>
@@ -146,24 +144,15 @@ std::string strip_trailing_whitespace(std::string value) {
     return value;
 }
 
-std::string normalize_sql_query(std::string query) {
-    query = strip_trailing_whitespace(std::move(query));
-
-    if (!query.empty() && query.back() != ';')
-        query.push_back(';');
-
-    return query;
-}
-
 std::string read_query_from_request(const httplib::Request& req) {
     if (!req.body.empty())
-        return normalize_sql_query(req.body);
+        return strip_trailing_whitespace(req.body);
 
     if (req.has_param("sql"))
-        return normalize_sql_query(req.get_param_value("sql"));
+        return strip_trailing_whitespace(req.get_param_value("sql"));
 
     if (req.has_param("query"))
-        return normalize_sql_query(req.get_param_value("query"));
+        return strip_trailing_whitespace(req.get_param_value("query"));
 
     return {};
 }
@@ -278,6 +267,8 @@ struct RestServer::Impl {
         bool first_column = true;
         bool first_row = true;
         u32 accepted_statements = 0;
+        const u64 reads_before = engine.buf_mgr.page_reads;
+        const u64 writes_before = engine.buf_mgr.page_writes;
         JsonRowSink sink{columns_json, rows_json, first_column, first_row};
         try {
             accepted_statements = executor.exec(*parsed, sink);
@@ -298,11 +289,15 @@ struct RestServer::Impl {
             std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start)
                 .count());
 
+        const u64 disk_reads = engine.buf_mgr.page_reads - reads_before;
+        const u64 disk_writes = engine.buf_mgr.page_writes - writes_before;
+
         columns_json += "]";
         rows_json += "]";
         std::string data = std::format(
-            "{{\"acceptedStatements\":{},\"timingMs\":{{\"parse\":{},\"exec\":{}}},\"columns\":{},\"rows\":{}}}",
-            accepted_statements, parse_ms, exec_ms, columns_json, rows_json);
+            "{{\"acceptedStatements\":{},\"timingMs\":{{\"parse\":{},\"exec\":{}}},\"diskIO\":{{\"reads\":{},\"writes\":{}}},\"columns\":{},\"rows\":{}}}",
+            accepted_statements, parse_ms, exec_ms, disk_reads, disk_writes, columns_json,
+            rows_json);
         respond_json(res, HTTP_OK, make_success_json(request_id, data));
     }
 
