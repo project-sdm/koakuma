@@ -62,10 +62,17 @@ private:
         pnum_t next_free;
     };
 
+    struct OpenFile {
+        std::fstream stream;
+        std::filesystem::path path;
+
+        OpenFile(std::fstream stream, std::filesystem::path path);
+    };
+
     static constexpr pnum_t FILE_HEADER_PAGE = 0;
 
     u64 cur_id = 0;
-    std::unordered_map<FileId, std::fstream> open_files;
+    std::unordered_map<FileId, OpenFile> open_files;
     std::vector<u8> buf{std::vector<u8>(PAGE_SIZE)};
 
     [[nodiscard]] static constexpr long page_offset(pnum_t pnum);
@@ -87,8 +94,9 @@ private:
 public:
     // NOTE: we might want to return a FileGuard or something similar.
     // It depends on how long-lived files will be in practice.
-    [[nodiscard]] FileId open_create(const std::filesystem::path& filename);
-    [[nodiscard]] std::optional<FileId> open(const std::filesystem::path& filename);
+    [[nodiscard]] FileId open_create(std::filesystem::path filename);
+    [[nodiscard]] std::optional<FileId> open(std::filesystem::path filename);
+    [[nodiscard]] FileId open_copy(FileId fid, std::filesystem::path filename);
     void close(const FileId& fid);
 
     [[nodiscard]] static bool exists(const std::filesystem::path& filename);
@@ -98,6 +106,8 @@ public:
 
     [[nodiscard]] bool read_page(const FileId& fid, pnum_t pnum, std::span<u8> data);
     void write_page(const FileId& fid, pnum_t pnum, std::span<const u8> data);
+
+    [[nodiscard]] const std::filesystem::path& file_path(FileId fid) const;
 
     template<typename UserHeader>
         requires std::is_default_constructible_v<UserHeader>
@@ -111,7 +121,7 @@ template<typename UserHeader>
     requires std::is_default_constructible_v<UserHeader>
 UserHeader FileManager::read_user_header(const FileId& fid) {
     auto& file = open_files.at(fid);
-    FileHeader header = read_file_header(file);
+    FileHeader header = read_file_header(file.stream);
 
     if (!header.user_head_init)
         return UserHeader{};
@@ -126,7 +136,7 @@ void FileManager::write_user_header(const FileId& fid, const UserHeader& usr_hea
         throw std::runtime_error("user header is too large for a single page");
 
     auto& file = open_files.at(fid);
-    FileHeader header = read_file_header(file);
+    FileHeader header = read_file_header(file.stream);
     header.user_head_init = true;
 
     // NOTE: this also relies on read_file_header leaving `buf` with the first page.
@@ -134,7 +144,7 @@ void FileManager::write_user_header(const FileId& fid, const UserHeader& usr_hea
 
     u8* dest = buf.data() + sizeof(FileHeader);
     pack::pack(usr_header, dest);
-    write_page(file, FILE_HEADER_PAGE, buf);
+    write_page(file.stream, FILE_HEADER_PAGE, buf);
 }
 
 #endif

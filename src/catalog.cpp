@@ -19,11 +19,15 @@ const SeqFile::Meta& Table::get_meta() const {
 }
 
 std::optional<Rid> Table::insert(const Row& row) {
-    return seq_file.insert(row);
+    return seq_file.add(row);
 }
 
-SeqFile::Cursor Table::cursor() {
-    return seq_file.cursor();
+SeqFile::iterator Table::begin() {
+    return seq_file.begin();
+}
+
+SeqFile::iterator Table::end() {
+    return seq_file.end();
 }
 
 namespace catalog {

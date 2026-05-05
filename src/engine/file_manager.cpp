@@ -3,10 +3,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <ios>
 #include <optional>
-#include <print>
+#include <utility>
 #include "types.hpp"
 #include "util.hpp"
 
@@ -16,6 +17,10 @@ FileId::FileId(u64 value)
     : id{value} {}
 
 bool FileId::operator==(const FileId& other) const = default;
+
+FileManager::OpenFile::OpenFile(std::fstream stream, std::filesystem::path path)
+    : stream{std::move(stream)},
+      path{std::move(path)} {}
 
 constexpr long FileManager::page_offset(pnum_t pnum) {
     return static_cast<long>(PAGE_SIZE * pnum);
@@ -111,17 +116,26 @@ void FileManager::write_inactive_page(std::fstream& file,
     write_page(file, pnum, buf);
 }
 
-std::optional<FileId> FileManager::open(const std::filesystem::path& filename) {
+std::optional<FileId> FileManager::open(std::filesystem::path filename) {
     std::fstream file = TRY_OPT(open_inner(filename));
     FileId fid{gen_id()};
-    open_files.emplace(fid, std::move(file));
+    open_files.emplace(fid, OpenFile{std::move(file), std::move(filename)});
     return fid;
 }
 
-FileId FileManager::open_create(const std::filesystem::path& filename) {
+FileId FileManager::open_create(std::filesystem::path filename) {
     FileId fid{gen_id()};
-    open_files.emplace(fid, open_create_inner(filename));
+    open_files.emplace(fid, OpenFile{open_create_inner(filename), std::move(filename)});
     return fid;
+}
+
+FileId FileManager::open_copy(FileId fid, std::filesystem::path filename) {
+    auto& file = open_files.at(fid);
+
+    std::filesystem::remove(filename);
+    std::filesystem::copy_file(file.path, filename);
+
+    return *open(std::move(filename));
 }
 
 void FileManager::close(const FileId& fid) {
@@ -134,7 +148,7 @@ void FileManager::close(const FileId& fid) {
 pnum_t FileManager::alloc_page(const FileId& fid) {
     auto& file = open_files.at(fid);
 
-    FileHeader header = read_file_header(file);
+    FileHeader header = read_file_header(file.stream);
     assert(header.first_free <= header.page_capacity);
 
     pnum_t new_page = header.first_free;
@@ -143,11 +157,11 @@ pnum_t FileManager::alloc_page(const FileId& fid) {
         header.page_capacity += 1;
         header.first_free = header.page_capacity;
     } else {
-        auto free_page = read_inactive_page(file, new_page);
+        auto free_page = read_inactive_page(file.stream, new_page);
         header.first_free = free_page.next_free;
     }
 
-    write_file_header(file, header);
+    write_file_header(file.stream, header);
     return new_page;
 }
 
@@ -155,27 +169,32 @@ void FileManager::free_page(const FileId& fid, pnum_t pnum) {
     assert(pnum != FILE_HEADER_PAGE);
     auto& file = open_files.at(fid);
 
-    FileHeader header = read_file_header(file);
-    write_inactive_page(file, pnum, InactivePage{header.first_free});
+    FileHeader header = read_file_header(file.stream);
+    write_inactive_page(file.stream, pnum, InactivePage{header.first_free});
 
     header.first_free = pnum;
-    write_file_header(file, header);
+    write_file_header(file.stream, header);
 }
 
 bool FileManager::read_page(const FileId& fid, pnum_t pnum, std::span<u8> data) {
     assert(pnum != FILE_HEADER_PAGE);
 
     auto& file = open_files.at(fid);
-    return read_page(file, pnum, data);
+    return read_page(file.stream, pnum, data);
 }
 
 void FileManager::write_page(const FileId& fid, pnum_t pnum, std::span<const u8> data) {
     assert(pnum != FILE_HEADER_PAGE);
 
     auto& file = open_files.at(fid);
-    write_page(file, pnum, data);
+    write_page(file.stream, pnum, data);
 }
 
 bool FileManager::exists(const std::filesystem::path& filename) {
     return std::filesystem::exists(filename);
+}
+
+const std::filesystem::path& FileManager::file_path(FileId fid) const {
+    const auto& file = open_files.at(fid);
+    return file.path;
 }

@@ -112,6 +112,8 @@ private:
 
     struct SlotExtra {
         bool active;
+
+        explicit SlotExtra(bool active);
     };
 
     using SeqPage = SlottedPage<PageHeader, SlotExtra, Row>;
@@ -127,19 +129,31 @@ private:
 
     Rid insert_into_aux(const Row& row);
 
-    static pnum_t aux_pnum(const SeqHeader& file_hdr);
+    static pnum_t calc_aux_pnum(const SeqHeader& file_hdr);
+
+    void rebuild(SeqHeader& file_hdr);
 
 public:
-    class Cursor {
+    class iterator {
+        std::optional<Row> row_buf = std::nullopt;
         SeqFile& seq_file;
-        std::optional<SeqPage> page = std::nullopt;
+        SeqHeader seq_hdr;
+        std::optional<SeqPage> page_buf = std::nullopt;
+        pnum_t cur_pnum;
         u32 cur_slot = 0;
-        pnum_t cur_pnum = 1;
+
+        SeqPage& page();
+
+        void find_active();
 
     public:
-        explicit Cursor(SeqFile& seq_file);
+        using value_type = Row;
 
-        std::optional<Row> next();
+        explicit iterator(SeqFile& seq_file, pnum_t init_pnum, u32 init_slot);
+
+        value_type operator*();
+        iterator& operator++();
+        bool operator==(const iterator& other) const;
     };
 
     SeqFile(Engine& engine, FileId fid);
@@ -159,7 +173,8 @@ public:
     [[nodiscard]] std::optional<Row> search(const Value& pkey);
     std::optional<Rid> remove(const Value& pkey);
 
-    Cursor cursor();
+    [[nodiscard]] iterator begin();
+    [[nodiscard]] iterator end();
 };
 
 template<>

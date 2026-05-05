@@ -1,6 +1,10 @@
 #include "seq_file.hpp"
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <filesystem>
 #include <optional>
+#include <print>
 #include <utility>
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
@@ -19,6 +23,9 @@ Column::Column(std::string name, ColumnType type)
     : name{std::move(name)},
       type{type} {}
 
+SeqFile::SlotExtra::SlotExtra(bool active)
+    : active{active} {}
+
 SeqHeader::SeqHeader(std::vector<Column> columns, u32 pkey_col)
     : columns{std::move(columns)},
       pkey_col{pkey_col} {}
@@ -31,7 +38,7 @@ void SeqFile::init(std::vector<Column> columns, u32 pkey_col) {
     SeqHeader file_hdr{std::move(columns), pkey_col};
     eng.file_mgr.write_user_header(fid, file_hdr);
 
-    SeqPage aux_page{eng.buf_mgr.fetch_page(fid, aux_pnum(file_hdr))};
+    SeqPage aux_page{eng.buf_mgr.fetch_page(fid, calc_aux_pnum(file_hdr))};
     aux_page.init();
 }
 
@@ -100,19 +107,19 @@ std::optional<Rid> SeqFile::find_by_pkey_in_main_pages(const Value& pkey) {
     return Rid{pnum, slot_idx};
 }
 
-pnum_t SeqFile::aux_pnum(const SeqHeader& file_hdr) {
+pnum_t SeqFile::calc_aux_pnum(const SeqHeader& file_hdr) {
     return 1 + file_hdr.main_pages;
 }
 
 std::optional<Rid> SeqFile::find_by_pkey_in_aux_page(const Value& pkey) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
-    SeqPage page{eng.buf_mgr.fetch_page(fid, aux_pnum(file_hdr))};
+    SeqPage page{eng.buf_mgr.fetch_page(fid, calc_aux_pnum(file_hdr))};
 
     for (u32 i = 0; i < page.slot_cnt(); ++i) {
         auto row = page.read_data(i);
 
         if (pkey == row[file_hdr.pkey_col])
-            return Rid{aux_pnum(file_hdr), i};
+            return Rid{calc_aux_pnum(file_hdr), i};
     }
 
     return std::nullopt;
@@ -143,79 +150,174 @@ std::optional<Rid> SeqFile::add(const Row& row) {
 
     if (auto rid = find_rid_by_pkey_in_all_pages(pkey)) {
         SeqPage page{eng.buf_mgr.fetch_page(fid, rid->pnum)};
-        auto extra = page.read_slot_extra(rid->slot_idx);
 
-        if (extra.active)
+        if (page.read_slot_extra(rid->slot_idx).active)
             return std::nullopt;
     }
 
     return insert_into_aux(row);
 }
 
+void SeqFile::rebuild(SeqHeader& file_hdr) {
+    std::println("rebuild");
+    std::vector<Row> aux_rows;
+
+    {
+        pnum_t aux_pnum = calc_aux_pnum(file_hdr);
+        SeqPage aux_page{eng.buf_mgr.fetch_page(fid, aux_pnum)};
+
+        aux_rows.reserve(aux_page.slot_cnt());
+
+        for (u32 i = 0; i < aux_page.slot_cnt(); ++i) {
+            if (aux_page.read_slot_extra(i).active)
+                aux_rows.push_back(aux_page.read_data(i));
+        }
+    }
+
+    u32 pkey_col = file_hdr.pkey_col;
+    std::ranges::sort(aux_rows,
+                      [&](const Row& a, const Row& b) { return a[pkey_col] < b[pkey_col]; });
+
+    auto aux_it = aux_rows.begin();
+    auto aux_end = aux_rows.end();
+
+    std::filesystem::path tmp_path = eng.file_mgr.file_path(fid);
+    tmp_path += ".tmp";
+
+    FileId tmp_fid = eng.file_mgr.open_copy(fid, tmp_path);
+
+    {
+        SeqPage tmp_aux_page{eng.buf_mgr.fetch_page(tmp_fid, calc_aux_pnum(file_hdr))};
+        tmp_aux_page.init();
+    }
+
+    pnum_t cur_pnum = 1;
+
+    {
+        SeqFile seq_tmp{eng, tmp_fid};
+        auto main_it = seq_tmp.begin();
+        auto main_end = seq_tmp.end();
+
+        SeqPage cur_page{eng.buf_mgr.fetch_page(fid, cur_pnum)};
+        cur_page.init();
+
+        while (aux_it != aux_end || main_it != main_end) {
+            Row next_row;
+
+            if (aux_it != aux_end &&
+                (main_it == main_end || (*aux_it)[pkey_col] < (*main_it)[pkey_col])) {
+                next_row = *aux_it;
+                ++aux_it;
+            } else {
+                next_row = *main_it;
+                ++main_it;
+            }
+
+            if (!cur_page.will_fit(next_row)) {
+                cur_pnum += 1;
+                cur_page = SeqPage{eng.buf_mgr.fetch_page(fid, cur_pnum)};
+                cur_page.init();
+            }
+
+            cur_page.push_back(SlotExtra{true}, next_row);
+        }
+    }
+
+    file_hdr.main_pages = cur_pnum;
+
+    {
+        SeqPage new_aux_page{eng.buf_mgr.fetch_page(fid, calc_aux_pnum(file_hdr))};
+        new_aux_page.init();
+    }
+
+    eng.file_mgr.close(tmp_fid);
+    eng.file_mgr.write_user_header(fid, file_hdr);
+}
+
 // assumes that `row`'s primary key is not already in the aux page
 Rid SeqFile::insert_into_aux(const Row& row) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
-    pnum_t pnum = aux_pnum(file_hdr);
 
-    SeqPage aux_page{eng.buf_mgr.fetch_page(fid, pnum)};
+    {
+        pnum_t aux_pnum = calc_aux_pnum(file_hdr);
+        SeqPage aux_page{eng.buf_mgr.fetch_page(fid, aux_pnum)};
 
-    u32 new_slot_idx = aux_page.slot_cnt();
+        u32 new_slot_idx = aux_page.slot_cnt();
 
-    if (aux_page.will_fit(row)) {
-        aux_page.push_back(SlotExtra{true}, row);
-        return Rid{pnum, new_slot_idx};
+        if (aux_page.will_fit(row)) {
+            aux_page.push_back(SlotExtra{true}, row);
+            return Rid{aux_pnum, new_slot_idx};
+        }
     }
 
-    FileId tmp_fid = eng.file_mgr.open_create("tmp.bin");
-
-    eng.file_mgr.close(tmp_fid);
-
-    assert(false && "TODO: implement rebuild");
+    rebuild(file_hdr);
+    return insert_into_aux(row);
 }
 
-using Cursor = SeqFile::Cursor;
+using iterator = SeqFile::iterator;
 
-Cursor::Cursor(SeqFile& seq_file)
-    : seq_file{seq_file} {}
-
-Cursor SeqFile::cursor() {
-    return Cursor{*this};
+iterator SeqFile::begin() {
+    return iterator{*this, 1, 0};
 }
 
-std::optional<Row> Cursor::next() {
-    while (true) {
-        if (cur_pnum == PAGE_NIL)
-            return std::nullopt;
+iterator SeqFile::end() {
+    // we could read at what page iterator should end, but this is cheaper
+    return iterator{*this, PAGE_NIL, 0};
+}
 
-        if (!page)
-            page.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
+iterator::iterator(SeqFile& seq_file, pnum_t init_pnum, u32 init_slot)
+    : seq_file{seq_file},
+      seq_hdr{seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid)},
+      cur_pnum{init_pnum},
+      cur_slot{init_slot} {
+    find_active();
+}
 
-        SlotExtra extra = page->read_slot_extra(cur_slot);
+SeqFile::SeqPage& iterator::page() {
+    assert(cur_pnum != PAGE_NIL);
 
-        std::optional<Row> row = std::nullopt;
-        if (extra.active)
-            row = page->read_data(cur_slot);
+    if (!page_buf)
+        page_buf.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
 
-        cur_slot += 1;
-        assert(cur_slot <= page->slot_cnt());
+    return *page_buf;
+}
 
-        if (cur_slot == page->slot_cnt()) {
-            page.reset();
+void iterator::find_active() {
+    while (cur_pnum != PAGE_NIL) {
+        if (cur_slot == page().slot_cnt()) {
+            page_buf.reset();
             cur_slot = 0;
+            cur_pnum += 1;
 
-            auto file_hdr = seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid);
-
-            assert(cur_pnum <= aux_pnum(file_hdr));
-
-            if (cur_pnum == aux_pnum(file_hdr))
+            if (cur_pnum > calc_aux_pnum(seq_hdr))
                 cur_pnum = PAGE_NIL;
-            else
-                cur_pnum += 1;
+
+            continue;
         }
 
-        if (row)
-            return row;
+        if (page().read_slot_extra(cur_slot).active)
+            return;
+
+        cur_slot += 1;
     }
+}
+
+iterator::value_type iterator::operator*() {
+    if (!row_buf)
+        row_buf = page().read_data(cur_slot);
+
+    return *row_buf;
+}
+
+bool iterator::operator==(const iterator& other) const {
+    return cur_pnum == other.cur_pnum && cur_slot == other.cur_slot;
+}
+
+iterator& iterator::operator++() {
+    row_buf = std::nullopt;
+    cur_slot += 1;
+    find_active();
+    return *this;
 }
 
 std::optional<Rid> SeqFile::remove(const Value& pkey) {

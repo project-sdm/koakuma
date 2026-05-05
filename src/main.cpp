@@ -1,11 +1,10 @@
-#include "api/rest_server.hpp"
 #include <cassert>
 #include <format>
 #include <print>
+#include <vector>
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
-#include "index/btree.hpp"
-#include "index/hash.hpp"
+#include "seq_file.hpp"
 
 int main() {
     std::println(R"( _  __           _                          )");
@@ -17,25 +16,48 @@ int main() {
     std::println("Page size: {}", PAGE_SIZE);
     std::println();
 
-    /*
-    
-    Engine eng{};    
-    auto fid = eng.file_mgr.open_create("hello.index.bin");
-    HashIndex index{eng, fid};
+    Engine eng{};
 
-    index.init();
+    auto fid = eng.file_mgr.open_create("hello.bin");
 
-    for (int i = 0; i < 32; ++i) {
-        int key = 3 * i;
-        index.add(key, Rid{static_cast<u32>(i), static_cast<u32>(i + 1)});
-        index.ugly_print();
-        std::println();
+    std::vector<Column> columns = {
+        {    "id",    ColumnType::INT},
+        {  "name", ColumnType::STRING},
+        {"active",   ColumnType::BOOL},
+    };
+
+    SeqFile seq_file{eng, fid};
+    seq_file.init(columns, 0);
+
+    for (int i = 0; i < 20; ++i) {
+        int key = 100 - i;
+        std::println("inserting {}", key);
+        seq_file.add({key, std::format("hello {}", i + 1), (bool)(i % 2)});
     }
 
-    index.add(1, Rid{0, 0});
-    index.add(2, Rid{0, 0});
+    for (auto row : seq_file)
+        std::println("{} ", row);
 
-    index.ugly_print();
+    // BTreeIndex index{eng, fid};
+
+    // index.init();
+
+    // for (int i = 0; i < 32; ++i) {
+    //     int key = i;
+    //     index.add(key, Rid{static_cast<u32>(i), static_cast<u32>(i + 1)});
+    //     index.ugly_print();
+    //     std::println();
+    // }
+
+    // index.add(1, Rid{0, 0});
+    // index.add(2, Rid{0, 0});
+
+    // index.ugly_print();
+    // std::println();
+
+    // auto cursor = index.search(0);
+    // while (auto rid = cursor.next())
+    //     std::println("{} {}", rid->pnum, rid->slot_idx);
 
     // auto cursor = index.range_search(21, 100);
     // while (auto rid = cursor.next()) {
@@ -64,16 +86,13 @@ int main() {
     // std::println("removing 16");
     // index.remove(16);
 
-    index.ugly_print();
-
     // index.insert(12, Rid{123, 345});
 
     eng.file_mgr.close(fid);
     */
 
-    api::ServerConfig cfg{};
-    std::println("REST API  ->  http://localhost:{}/query", cfg.port);
-    std::println("Frontend  ->  http://localhost:{}/", cfg.port);
-    std::println();
-    return api::run_rest_server(cfg);
+    // std::println("starting koakuma REST API server...");
+    // return api::run_rest_server();
+
+    return 0;
 }
