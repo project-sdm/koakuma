@@ -2,21 +2,41 @@
 #define SLOTTED_PAGE_HPP
 
 #include <cassert>
+#include <cstring>
+#include <span>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 #include "engine/buffer_manager.hpp"
 #include "pack.hpp"
+#include "types.hpp"
 #include "util.hpp"
 
 template<typename HeaderExtra, typename SlotExtra, typename Data>
 class SlottedPage {
+public:
+    class Slot {
+    private:
+        u32 pos;
+        u32 len;
+        SlotExtra extra;
+
+    public:
+        Slot(u32 pos, u32 len, SlotExtra extra)
+            : pos{pos},
+              len{len},
+              extra{std::move(extra)} {}
+
+        friend class SlottedPage;
+    };
+
 private:
     using PageGuard = BufferManager::PageGuard;
 
     struct Header {
         u32 slot_cnt = 0;
         u32 data_begin = PAGE_SIZE;
-        u32 heap_size = 0;
+        u32 used_heap = 0;
         HeaderExtra extra;
     };
 
@@ -28,30 +48,59 @@ private:
         return sizeof(Header) + (slot_idx * sizeof(Slot));
     }
 
+    void compact() {
+        is_dirty = true;
+
+        // (questionable?) usage of an extra temporary buffer to hold heap
+        auto heap_span = page.const_data().subspan(hdr.data_begin);
+        std::vector<u8> prev_data{heap_span.begin(), heap_span.end()};
+
+        hdr.data_begin = page.const_data().size_bytes();
+
+        for (u32 i = 0; i < hdr.slot_cnt; ++i) {
+            auto slot = read_slot(i);
+            u32 new_pos = hdr.data_begin - slot.len;
+
+            std::span<u8> src = std::span{prev_data}.subspan(slot.pos);
+            std::span<u8> dest = page.data().subspan(new_pos);
+
+            std::memcpy(dest.data(), src.data(), slot.len);
+
+            slot.pos = new_pos;
+            write_slot(i, slot);
+
+            hdr.data_begin = new_pos;
+        }
+    }
+
+    [[nodiscard]] u32 contiguous_free_space() const {
+        // prevents an underflow that should not happen
+        assert(hdr.data_begin >= sizeof(Header) + (hdr.slot_cnt * sizeof(Slot)));
+        return hdr.data_begin - sizeof(Header) - (hdr.slot_cnt * sizeof(Slot));
+    }
+
+    void ensure_contiguous_space(u32 space) {
+        assert(free_space() >= space);
+
+        if (contiguous_free_space() < space)
+            compact();
+
+        assert(contiguous_free_space() >= space);
+    }
+
+    [[nodiscard]] Slot read_slot(u32 slot_idx) const {
+        if (slot_idx >= hdr.slot_cnt)
+            throw std::out_of_range("slot index out of range");
+
+        return util::span_read<Slot>(page.const_data(), slot_offset(slot_idx));
+    }
+
+    void write_slot(u32 slot_idx, const Slot& slot) {
+        is_dirty = true;
+        util::span_write(page.data(), slot_offset(slot_idx), slot);
+    }
+
 public:
-    class Slot {
-    private:
-        u32 pos;
-        u32 len;
-        SlotExtra extra_data;
-
-    public:
-        Slot(u32 pos, u32 len, SlotExtra extra)
-            : pos{pos},
-              len{len},
-              extra_data{std::move(extra)} {}
-
-        SlotExtra& extra() {
-            return extra_data;
-        }
-
-        const SlotExtra& extra() const {
-            return extra_data;
-        }
-
-        friend class SlottedPage;
-    };
-
     explicit SlottedPage(PageGuard page)
         : page{std::move(page)},
           hdr{util::span_read<Header>(this->page.const_data(), 0)} {}
@@ -85,30 +134,17 @@ public:
         return hdr.slot_cnt;
     }
 
-    [[nodiscard]] Slot read_slot(u32 slot_idx) const {
-        if (slot_idx >= hdr.slot_cnt)
-            throw std::out_of_range("slot index out of range");
-
-        return util::span_read<Slot>(page.const_data(), slot_offset(slot_idx));
-    }
-
-    void write_slot(u32 slot_idx, const Slot& slot) {
-        is_dirty = true;
-        util::span_write(page.data(), slot_offset(slot_idx), slot);
-    }
-
     [[nodiscard]] constexpr u32 total_space() const {
-        return page.const_data().size() - sizeof(Header);
+        return page.const_data().size_bytes() - sizeof(Header);
     }
 
     [[nodiscard]] u32 free_space() const {
-        // prevents an underflow that should not happen
-        assert(hdr.data_begin >= sizeof(Header) + (hdr.slot_cnt * sizeof(Slot)));
-        return hdr.data_begin - sizeof(Header) - (hdr.slot_cnt * sizeof(Slot));
+        assert(total_space() >= used_space());
+        return total_space() - used_space();
     }
 
     [[nodiscard]] constexpr u32 used_space() const {
-        return total_space() - free_space();
+        return (hdr.slot_cnt * sizeof(Slot)) + hdr.used_heap;
     }
 
     [[nodiscard]] constexpr bool will_fit(const Data& data) const {
@@ -119,9 +155,20 @@ public:
         return pack::unpack_alloc<Data>(page.const_data().subspan(slot.pos).data());
     }
 
-    [[nodiscard]] Data read_data(u32 slot_idx) const {
+    [[nodiscard]] constexpr Data read_data(u32 slot_idx) const {
         Slot slot = read_slot(slot_idx);
         return read_data(slot);
+    }
+
+    [[nodiscard]] SlotExtra read_slot_extra(u32 slot_idx) const {
+        Slot slot = read_slot(slot_idx);
+        return std::move(slot.extra);
+    }
+
+    void write_slot_extra(u32 slot_idx, SlotExtra extra) {
+        Slot slot = read_slot(slot_idx);
+        slot.extra = std::move(extra);
+        write_slot(slot_idx, slot);
     }
 
     constexpr void push_back(SlotExtra extra, const Data& data) {
@@ -132,9 +179,7 @@ public:
         assert(slot_idx <= hdr.slot_cnt);
 
         u32 data_size = pack::pack_size(data);
-
-        // hack
-        assert(data_size <= total_space() - sizeof(Slot));
+        ensure_contiguous_space(sizeof(Slot) + data_size);
 
         if (!will_fit(data))
             throw std::runtime_error("not enough space");
@@ -157,16 +202,13 @@ public:
 
         hdr.slot_cnt += 1;
         hdr.data_begin = data_pos;
-        hdr.heap_size += data_size;
-    }
-
-    [[nodiscard]] bool will_update_fit(const Slot& slot, const Data& new_data) const {
-        u32 data_size = pack::pack_size(new_data);
-        return data_size <= slot.len || free_space() >= data_size;
+        hdr.used_heap += data_size;
     }
 
     void update_data(u32 slot_idx, const Data& new_data) {
         Slot slot = read_slot(slot_idx);
+        u32 prev_len = slot.len;
+
         u32 data_size = pack::pack_size(new_data);
         is_dirty = true;
 
@@ -176,7 +218,7 @@ public:
 
             pack::pack(new_data, dest);
         } else {
-            assert(free_space() >= data_size);
+            ensure_contiguous_space(data_size);
 
             u32 data_pos = hdr.data_begin - data_size;
             u8* dest = page.data().subspan(data_pos).data();
@@ -187,8 +229,10 @@ public:
             slot.len = data_size;
 
             hdr.data_begin = data_pos;
-            hdr.heap_size += data_size;
         }
+
+        hdr.used_heap += data_size;
+        hdr.used_heap -= prev_len;
 
         write_slot(slot_idx, slot);
     }
@@ -197,6 +241,8 @@ public:
         assert(slot_idx < hdr.slot_cnt);
         is_dirty = true;
 
+        Slot removed = read_slot(slot_idx);
+
         // shift slots to the left
         for (std::size_t i = slot_idx; i < hdr.slot_cnt - 1; ++i) {
             Slot slot = read_slot(i + 1);
@@ -204,16 +250,23 @@ public:
         }
 
         hdr.slot_cnt -= 1;
+
+        assert(hdr.used_heap >= removed.len);
+        hdr.used_heap -= removed.len;
     }
 
     void swap_remove(u32 slot_idx) {
         assert(slot_idx < hdr.slot_cnt);
 
         auto last = read_slot(hdr.slot_cnt - 1);
+        auto removed = read_slot(slot_idx);
         write_slot(slot_idx, last);
 
         is_dirty = true;
         hdr.slot_cnt -= 1;
+
+        assert(hdr.used_heap >= removed.len);
+        hdr.used_heap -= removed.len;
     }
 };
 

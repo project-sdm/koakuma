@@ -107,15 +107,16 @@ void HashIndex::add(const Value& key, Rid rid) {
             bucket_1_page.header_extra() = new_depth;
 
             for (u32 i = 0; i < cur_bucket.slot_cnt(); ++i) {
-                auto slot = cur_bucket.read_slot(i);
-                Value key = cur_bucket.read_data(slot);
+                Value key = cur_bucket.read_data(i);
 
                 std::size_t h = std::hash<Value>{}(key);
 
+                auto extra = cur_bucket.read_slot_extra(i);
+
                 if ((h & (1 << local_depth)) == 0)
-                    bucket_0_page.push_back(slot.extra(), key);
+                    bucket_0_page.push_back(extra, key);
                 else
-                    bucket_1_page.push_back(slot.extra(), key);
+                    bucket_1_page.push_back(extra, key);
             }
         }
 
@@ -149,9 +150,7 @@ bool HashIndex::remove(const Value& key) {
         BucketPage bucket_page{eng.buf_mgr.fetch_page(fid, cur_bucket)};
 
         for (u32 i = 0; i < bucket_page.slot_cnt(); ++i) {
-            auto slot = bucket_page.read_slot(i);
-
-            if (key == bucket_page.read_data(slot)) {
+            if (key == bucket_page.read_data(i)) {
                 bucket_page.swap_remove(i);
                 return true;
             }
@@ -221,12 +220,12 @@ std::optional<Rid> HashIndex::Cursor::next() {
             continue;
         }
 
-        auto slot = page->read_slot(cur_slot);
-        Value key = page->read_data(slot);
+        Value key = page->read_data(cur_slot);
+        auto extra = page->read_slot_extra(cur_slot);
 
         cur_slot += 1;
 
         if (key == search_key)
-            return slot.extra().rid;
+            return extra.rid;
     }
 }

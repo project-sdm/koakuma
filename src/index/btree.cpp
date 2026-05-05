@@ -52,11 +52,11 @@ std::pair<pnum_t, pnum_t> BTreeIndex::leaf_insert_split(pnum_t og_pnum,
 
         assert(src_slot < og_page.slot_cnt());
 
-        auto slot = og_page.read_slot(src_slot);
-        Value slot_key = og_page.read_data(slot);
+        Value slot_key = og_page.read_data(src_slot);
+        auto extra = og_page.read_slot_extra(src_slot);
         src_slot += 1;
 
-        return std::make_pair(slot_key, slot.extra().rid);
+        return std::make_pair(slot_key, extra.rid);
     };
 
     pnum_t left_pnum = eng.file_mgr.alloc_page(fid);
@@ -123,11 +123,11 @@ std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
 
         assert(src_slot < og_page.slot_cnt());
 
-        auto slot = og_page.read_slot(src_slot);
-        Value slot_key = og_page.read_data(slot);
+        Value slot_key = og_page.read_data(src_slot);
+        auto extra = og_page.read_slot_extra(src_slot);
         src_slot += 1;
 
-        return std::make_pair(slot_key, slot.extra().left_child);
+        return std::make_pair(slot_key, extra.left_child);
     };
 
     Value mid_key;
@@ -173,11 +173,8 @@ std::pair<u32, pnum_t> BTreeIndex::inner_find_child(const NodePage& page, const 
     u32 fit_idx = 0;
 
     for (; fit_idx < page.slot_cnt(); ++fit_idx) {
-        auto slot = page.read_slot(fit_idx);
-
-        if (key < page.read_data(slot)) {
-            return {fit_idx, slot.extra().left_child};
-        }
+        if (key < page.read_data(fit_idx))
+            return {fit_idx, page.read_slot_extra(fit_idx).left_child};
     }
 
     return {fit_idx, page.const_header_extra().last_child};
@@ -189,8 +186,7 @@ u32 BTreeIndex::leaf_lower_bound_idx(const NodePage& page, const Value& key) {
     u32 ins_idx = 0;
 
     for (; ins_idx < page.slot_cnt(); ++ins_idx) {
-        auto slot = page.read_slot(ins_idx);
-        auto slot_key = page.read_data(slot);
+        auto slot_key = page.read_data(ins_idx);
 
         if (key <= slot_key)
             break;
@@ -261,9 +257,9 @@ void BTreeIndex::add(const Value& key, Rid rid) {
             if (idx == page.slot_cnt()) {
                 page.header_extra().last_child = right_pnum;
             } else {
-                auto og_slot = page.read_slot(idx);
-                og_slot.extra().left_child = right_pnum;
-                page.write_slot(idx, og_slot);
+                auto extra = page.read_slot_extra(idx);
+                extra.left_child = right_pnum;
+                page.write_slot_extra(idx, extra);
             }
 
             // all that's left is inserting `right_min` and its left child, `left_pnum`
@@ -320,11 +316,10 @@ void BTreeIndex::ugly_print() const {
         NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
 
         for (u32 i = 0; i < page.slot_cnt(); ++i) {
-            auto slot = page.read_slot(i);
-            std::print("{} ", page.read_data(slot));
+            std::print("{} ", page.read_data(i));
 
             if (!is_leaf(page.const_header_extra()))
-                q.emplace(slot.extra().left_child, depth + 1);
+                q.emplace(page.read_slot_extra(i).left_child, depth + 1);
         }
         std::print("     ");
 
@@ -362,9 +357,7 @@ bool BTreeIndex::remove(const Value& key) {
         u32 i = 0;
 
         for (; i < leaf_page.slot_cnt(); ++i) {
-            auto slot = leaf_page.read_slot(i);
-
-            if (key == leaf_page.read_data(slot))
+            if (key == leaf_page.read_data(i))
                 break;
         }
 
@@ -399,7 +392,7 @@ bool BTreeIndex::remove(const Value& key) {
                 updated_min = std::nullopt;
             }
 
-            if (leaf_page.used_space() < leaf_page.total_space() / 2) {
+            if (leaf_page.free_space() > leaf_page.total_space() / 2) {
                 // borrow if possible, otherwise merge (with prev if possible, otherwise with next)
                 if (!leaf_try_borrow(leaf_page, par_page, par_idx)) {
                     auto leaf_hdr_extra = leaf_page.const_header_extra();
@@ -413,9 +406,8 @@ bool BTreeIndex::remove(const Value& key) {
                                 eng.buf_mgr.fetch_page(fid, leaf_hdr_extra.prev_page)};
 
                             for (u32 i = 0; i < leaf_page.slot_cnt(); ++i) {
-                                auto slot = leaf_page.read_slot(i);
-                                Value slot_key = leaf_page.read_data(slot);
-                                prev_page.push_back(slot.extra(), slot_key);
+                                Value slot_key = leaf_page.read_data(i);
+                                prev_page.push_back(leaf_page.read_slot_extra(i), slot_key);
                             }
                         }
 
@@ -439,9 +431,8 @@ bool BTreeIndex::remove(const Value& key) {
                                 eng.buf_mgr.fetch_page(fid, leaf_hdr_extra.next_page)};
 
                             for (u32 i = 0; i < next_page.slot_cnt(); ++i) {
-                                auto slot = next_page.read_slot(i);
-                                Value slot_key = next_page.read_data(slot);
-                                leaf_page.push_back(slot.extra(), slot_key);
+                                Value slot_key = next_page.read_data(i);
+                                leaf_page.push_back(next_page.read_slot_extra(i), slot_key);
                             }
                         }
 
@@ -487,13 +478,14 @@ bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 pa
 
     if (hdr_extra.prev_page != PAGE_NIL) {
         NodePage prev_page{eng.buf_mgr.fetch_page(fid, hdr_extra.prev_page)};
-        auto last_slot = prev_page.read_slot(prev_page.slot_cnt() - 1);
+        u32 last_slot = prev_page.slot_cnt() - 1;
 
-        if (prev_page.used_space() >= prev_page.total_space() / 2) {
+        if (prev_page.free_space() < prev_page.total_space() / 2) {
             Value borrowed = prev_page.read_data(last_slot);
             prev_page.remove(prev_page.slot_cnt() - 1);
 
-            leaf_page.insert(0, SlotExtra::leaf(last_slot.extra().rid), borrowed);
+            leaf_page.insert(0, SlotExtra::leaf(prev_page.read_slot_extra(last_slot).rid),
+                             borrowed);
 
             assert(par_idx > 0);
             par_page.update_data(par_idx - 1, borrowed);
@@ -503,13 +495,13 @@ bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 pa
 
     if (hdr_extra.next_page != PAGE_NIL) {
         NodePage next_page{eng.buf_mgr.fetch_page(fid, hdr_extra.next_page)};
-        auto fst_slot = next_page.read_slot(0);
 
-        if (next_page.used_space() >= next_page.total_space() / 2) {
-            Value borrowed = next_page.read_data(fst_slot);
+        if (next_page.free_space() < next_page.total_space() / 2) {
+            Value borrowed = next_page.read_data(0);
             next_page.remove(0);
 
-            leaf_page.push_back(SlotExtra::leaf(fst_slot.extra().rid), borrowed);
+            auto fst_extra = next_page.read_slot_extra(0);
+            leaf_page.push_back(SlotExtra::leaf(fst_extra.rid), borrowed);
 
             Value new_right_min = next_page.read_data(0);
             par_page.update_data(par_idx, new_right_min);
@@ -525,8 +517,7 @@ bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 pa
     if (child_idx == page.slot_cnt())
         return page.const_header_extra().last_child;
 
-    auto slot = page.read_slot(child_idx);
-    return slot.extra().left_child;
+    return page.read_slot_extra(child_idx).left_child;
 }
 
 using RangeCursor = BTreeIndex::RangeCursor;
@@ -567,8 +558,7 @@ std::optional<Rid> RangeCursor::next() {
         return next();
     }
 
-    auto slot = page->read_slot(cur_slot);
-    Value key = page->read_data(slot);
+    Value key = page->read_data(cur_slot);
 
     if (key > key_high) {
         finished = true;
@@ -576,8 +566,10 @@ std::optional<Rid> RangeCursor::next() {
         return std::nullopt;
     }
 
+    Rid rid = page->read_slot_extra(cur_slot).rid;
     cur_slot += 1;
-    return slot.extra().rid;
+
+    return rid;
 }
 
 RangeCursor BTreeIndex::range_search(const Value& key_low, const Value& key_high) {
@@ -600,9 +592,7 @@ RangeCursor BTreeIndex::range_search(const Value& key_low, const Value& key_high
     u32 start_slot = 0;
 
     for (; start_slot < leaf_page.slot_cnt(); ++start_slot) {
-        auto slot = leaf_page.read_slot(start_slot);
-
-        if (leaf_page.read_data(slot) >= key_low)
+        if (leaf_page.read_data(start_slot) >= key_low)
             break;
     }
 
