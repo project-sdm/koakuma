@@ -1,0 +1,463 @@
+#pragma once
+
+#include <string_view>
+
+namespace api {
+
+constexpr std::string_view FRONTEND_HTML = R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Koakuma SQL Console</title>
+    <style>
+        :root {
+            --bg: #f4f1ea;
+            --panel: #fffdf9;
+            --panel-border: #ded6c8;
+            --text: #1f2328;
+            --muted: #67635d;
+            --accent: #4f6f52;
+            --accent-hover: #3f5c42;
+            --success-bg: #eef5ee;
+            --success-border: #c9ddca;
+            --error-bg: #fbefef;
+            --error-border: #e3c2c2;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.6), transparent 35%),
+                linear-gradient(180deg, #ece6dc 0%, var(--bg) 100%);
+            color: var(--text);
+            font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+            padding: 24px;
+        }
+
+        .shell {
+            max-width: 960px;
+            margin: 0 auto;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(31, 35, 40, 0.08);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 28px 30px 18px;
+            border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 30px;
+            line-height: 1.1;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            margin: 10px 0 0;
+            color: var(--muted);
+            font-size: 15px;
+        }
+
+        .content {
+            padding: 28px 30px 32px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 170px;
+            padding: 14px 16px;
+            border: 1px solid #cfc7b8;
+            border-radius: 10px;
+            background: #fff;
+            color: var(--text);
+            font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+            font-size: 14px;
+            line-height: 1.45;
+            resize: vertical;
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: rgba(79, 111, 82, 0.75);
+            box-shadow: 0 0 0 3px rgba(79, 111, 82, 0.12);
+        }
+
+        .button-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 10px;
+            padding: 11px 18px;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-execute {
+            background: var(--accent);
+            color: #fff;
+            flex: 1;
+        }
+
+        .btn-execute:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-clear {
+            background: #ece7df;
+            color: #2c2a27;
+        }
+
+        .btn-clear:hover {
+            background: #e2dbd0;
+        }
+
+        .results {
+            margin-top: 26px;
+        }
+
+        .result-box {
+            border: 1px solid #d8d2c6;
+            border-radius: 10px;
+            background: #faf8f3;
+            padding: 16px;
+            min-height: 72px;
+            max-height: 420px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .result-summary {
+            margin: 0 0 12px;
+            white-space: normal;
+            font-weight: 600;
+        }
+
+        .result-table-wrap {
+            overflow-x: auto;
+        }
+
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 100%;
+            white-space: normal;
+            background: #fff;
+            border: 1px solid rgba(31, 35, 40, 0.12);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .result-table th,
+        .result-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+            vertical-align: top;
+        }
+
+        .result-table th {
+            background: rgba(79, 111, 82, 0.08);
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .result-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .result-table td.is-null {
+            color: var(--muted);
+            font-style: italic;
+        }
+
+        .result-box.success {
+            background: var(--success-bg);
+            border-color: var(--success-border);
+        }
+
+        .result-box.error {
+            background: var(--error-bg);
+            border-color: var(--error-border);
+            color: #8a2d2d;
+        }
+
+        .hidden { display: none; }
+
+        .loading {
+            color: var(--muted);
+            font-style: italic;
+        }
+
+        .result-title {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 640px) {
+            body { padding: 12px; }
+            .header, .content { padding-left: 18px; padding-right: 18px; }
+            .button-row { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="header">
+            <h1>Koakuma SQL Console</h1>
+            <p class="subtitle">Run SQL statements against the local database.</p>
+        </section>
+
+        <section class="content">
+            <div>
+                <label for="sqlInput">SQL Query</label>
+                <textarea id="sqlInput" placeholder="Example: SELECT * FROM users WHERE name = 'Alice';"></textarea>
+                <div class="button-row">
+                    <button type="button" class="btn-execute" data-action="execute">Execute Query</button>
+                    <button type="button" class="btn-clear" data-action="clear">Clear</button>
+                </div>
+            </div>
+
+            <div class="results hidden" id="resultsSection">
+                <label>Results</label>
+                <div class="result-box" id="resultBox"></div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const API = Object.freeze({
+            queryPath: '/query'
+        });
+
+        const DOM = Object.freeze({
+            sqlInput: 'sqlInput',
+            resultsSection: 'resultsSection',
+            resultBox: 'resultBox',
+            executeButton: '[data-action="execute"]',
+            clearButton: '[data-action="clear"]'
+        });
+
+        const TEXT = Object.freeze({
+            emptyQuery: 'Please enter a query.',
+            runningQuery: 'Running query...',
+            success: 'Success',
+            error: 'Error',
+            noRowsReturned: 'No rows returned.',
+            networkErrorPrefix: 'Network error: '
+        });
+
+        const RESULT_STATE_CLASS = Object.freeze({
+            loading: 'result-box loading',
+            success: 'result-box success',
+            error: 'result-box error'
+        });
+
+        function createTextCell(tagName, value, className = '') {
+            const cell = document.createElement(tagName);
+            if (className) {
+                cell.className = className;
+            }
+
+            cell.textContent = value;
+            return cell;
+        }
+
+        function getElement(id) {
+            const element = document.getElementById(id);
+            if (!element) {
+                throw new Error(`Missing expected element: ${id}`);
+            }
+
+            return element;
+        }
+
+        function getUi() {
+            return {
+                sqlInput: getElement(DOM.sqlInput),
+                resultsSection: getElement(DOM.resultsSection),
+                resultBox: getElement(DOM.resultBox),
+                executeButton: document.querySelector(DOM.executeButton),
+                clearButton: document.querySelector(DOM.clearButton)
+            };
+        }
+
+        function setResultState(resultBox, state) {
+            resultBox.className = RESULT_STATE_CLASS[state];
+        }
+
+        function clearResultBox(resultBox) {
+            resultBox.textContent = '';
+            resultBox.className = 'result-box';
+        }
+
+        function getColumnName(column, index) {
+            if (column && typeof column.name === 'string' && column.name.trim()) {
+                return column.name;
+            }
+
+            return `Column ${index + 1}`;
+        }
+
+        function formatCellValue(value) {
+            if (value === null || value === undefined) {
+                return 'NULL';
+            }
+
+            if (typeof value === 'string') {
+                return value;
+            }
+
+            return String(value);
+        }
+
+        function renderSuccessPayload(resultBox, data) {
+            resultBox.textContent = '';
+
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = `${TEXT.success} | Accepted statements: ${data.acceptedStatements} | Parse time: ${data.timingMs.parse} ms | Execution time: ${data.timingMs.exec} ms`;
+            resultBox.append(summary);
+
+            const rows = Array.isArray(data.rows) ? data.rows : [];
+            if (rows.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = TEXT.noRowsReturned;
+                resultBox.append(empty);
+                return;
+            }
+
+            const columns = Array.isArray(data.columns) ? data.columns : [];
+            const columnCount = Math.max(columns.length, rows[0]?.length ?? 0);
+
+            const wrap = document.createElement('div');
+            wrap.className = 'result-table-wrap';
+
+            const table = document.createElement('table');
+            table.className = 'result-table';
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            for (let i = 0; i < columnCount; ++i) {
+                headerRow.append(createTextCell('th', getColumnName(columns[i], i)));
+            }
+            thead.append(headerRow);
+
+            const tbody = document.createElement('tbody');
+            rows.forEach((row) => {
+                const tr = document.createElement('tr');
+                for (let i = 0; i < columnCount; ++i) {
+                    const value = row?.[i];
+                    const cell = createTextCell('td', formatCellValue(value), value === null || value === undefined ? 'is-null' : '');
+                    tr.append(cell);
+                }
+                tbody.append(tr);
+            });
+
+            table.append(thead, tbody);
+            wrap.append(table);
+            resultBox.append(wrap);
+        }
+
+        function formatErrorPayload(error) {
+            let output = `${TEXT.error}\n`;
+            output += `Code: ${error.code}\n`;
+            output += `Message: ${error.message}\n`;
+
+            if (error.detail) {
+                output += `Detail: ${error.detail}\n`;
+            }
+
+            return output;
+        }
+
+        async function executeQuery() {
+            const ui = getUi();
+            const query = ui.sqlInput.value.trim();
+
+            if (!query) {
+                window.alert(TEXT.emptyQuery);
+                return;
+            }
+
+            ui.resultsSection.classList.remove('hidden');
+            ui.resultBox.textContent = TEXT.runningQuery;
+            setResultState(ui.resultBox, 'loading');
+
+            try {
+                const response = await fetch(API.queryPath, {
+                    method: 'POST',
+                    body: query,
+                    headers: {
+                        'Content-Type': 'text/plain'
+                    }
+                });
+
+                const payload = await response.json();
+
+                if (payload.status === 'success') {
+                    renderSuccessPayload(ui.resultBox, payload.data);
+                    setResultState(ui.resultBox, 'success');
+                } else {
+                    ui.resultBox.textContent = formatErrorPayload(payload.error);
+                    setResultState(ui.resultBox, 'error');
+                }
+            } catch (error) {
+                ui.resultBox.textContent = `${TEXT.networkErrorPrefix}${error.message}`;
+                setResultState(ui.resultBox, 'error');
+            }
+        }
+
+        function clearAll() {
+            const ui = getUi();
+            ui.sqlInput.value = '';
+            ui.resultsSection.classList.add('hidden');
+            clearResultBox(ui.resultBox);
+            ui.sqlInput.focus();
+        }
+
+        function initApp() {
+            const ui = getUi();
+
+            ui.executeButton?.addEventListener('click', executeQuery);
+            ui.clearButton?.addEventListener('click', clearAll);
+            ui.sqlInput.addEventListener('keydown', (event) => {
+                if (event.ctrlKey && event.key === 'Enter') {
+                    executeQuery();
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
+
+)HTML";
+
+}  // namespace api
