@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 add_executable(koakuma
+  src/api/rest_server.cpp
   src/catalog.cpp
   src/cross.cpp
   src/engine/buffer_manager.cpp
@@ -32,6 +33,8 @@ target_include_directories(koakuma
 )
 
 target_compile_options(koakuma PRIVATE -Wall -Wextra)
+
+target_link_libraries(koakuma PRIVATE pthread)
 
 include(GNUInstallDirs)
 

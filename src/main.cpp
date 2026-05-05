@@ -1,3 +1,4 @@
+#include "api/rest_server.hpp"
 #include <cassert>
 #include <format>
 #include <print>
@@ -67,6 +68,9 @@ int main() {
     // index.insert(12, Rid{123, 345});
 
     eng.file_mgr.close(fid);
+
+    std::println("starting koakuma REST API server...");
+    return api::run_rest_server();
 
     return 0;
 }
