@@ -48,6 +48,7 @@ add_executable(koakuma
   src/parser/peekable_lexer.cpp
   src/query_executor.cpp
   src/seq_file.cpp
+  src/util.cpp
 )
 
 add_dependencies(koakuma generate_frontend)
