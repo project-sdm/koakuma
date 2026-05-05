@@ -178,6 +178,11 @@ public:
           first_row{first_row} {}
 
     void on_columns(const std::vector<Column>& columns) override {
+        columns_json = "[";
+        rows_json = "[";
+        first_column = true;
+        first_row = true;
+
         for (const auto& column : columns) {
             if (!first_column)
                 columns_json += ',';
