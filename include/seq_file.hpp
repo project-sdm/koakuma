@@ -136,6 +136,7 @@ private:
 
 public:
     class Cursor {
+    private:
         SeqFile& seq_file;
         SeqHeader seq_hdr;
         std::optional<SeqPage> page_buf = std::nullopt;
@@ -148,6 +149,27 @@ public:
         using value_type = Row;
 
         explicit Cursor(SeqFile& seq_file);
+
+        std::optional<value_type> next();
+    };
+
+    class RangeCursor {
+    private:
+        SeqFile& seq_file;
+        SeqHeader seq_hdr;
+        std::optional<SeqPage> page_buf = std::nullopt;
+        u32 cur_slot = 0;
+        pnum_t cur_pnum = 1;
+
+        Value pkey_low;
+        Value pkey_high;
+
+        SeqPage& page();
+
+    public:
+        using value_type = Row;
+
+        explicit RangeCursor(SeqFile& seq_file, Value pkey_low, Value pkey_high);
 
         std::optional<value_type> next();
     };
@@ -169,6 +191,7 @@ public:
 
     std::optional<Rid> add(const Row& row);
     [[nodiscard]] std::optional<Row> search(const Value& pkey);
+    [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
     std::optional<Rid> remove(const Value& pkey);
 
     Cursor cursor();

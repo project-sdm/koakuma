@@ -322,3 +322,58 @@ std::optional<Row> Cursor::next() {
 
     return row;
 }
+
+using RangeCursor = SeqFile::RangeCursor;
+
+SeqFile::SeqPage& RangeCursor::page() {
+    assert(cur_pnum != PAGE_NIL);
+
+    if (!page_buf)
+        page_buf.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
+
+    return *page_buf;
+}
+
+RangeCursor SeqFile::range_search(const Value& pkey_low, const Value& pkey_high) {
+    // TODO: start at lowest key >= pkey_low for O(log(n) + k) complexity
+    return RangeCursor{*this, pkey_low, pkey_high};
+}
+
+RangeCursor::RangeCursor(SeqFile& seq_file, Value pkey_low, Value pkey_high)
+    : seq_file{seq_file},
+      seq_hdr{seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid)},
+      pkey_low(std::move(pkey_low)),
+      pkey_high{std::move(pkey_high)} {}
+
+std::optional<RangeCursor::value_type> RangeCursor::next() {
+    while (cur_pnum != PAGE_NIL) {
+        if (cur_slot == page().slot_cnt()) {
+            page_buf.reset();
+            cur_slot = 0;
+            cur_pnum += 1;
+
+            if (cur_pnum > calc_aux_pnum(seq_hdr))
+                cur_pnum = PAGE_NIL;
+
+            continue;
+        }
+
+        auto extra = page().read_slot_extra(cur_slot);
+
+        if (extra.active) {
+            Row row = page().read_data(cur_slot);
+            if (row[seq_hdr.pkey_col] >= pkey_low && row[seq_hdr.pkey_col] <= pkey_high)
+                break;
+        }
+
+        cur_slot += 1;
+    }
+
+    if (cur_pnum == PAGE_NIL)
+        return std::nullopt;
+
+    Row row = page().read_data(cur_slot);
+    cur_slot += 1;
+
+    return row;
+}
