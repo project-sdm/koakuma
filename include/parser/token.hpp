@@ -1,6 +1,7 @@
 #ifndef TOKEN_HPP
 #define TOKEN_HPP
 
+#include <concepts>
 #include <format>
 #include <string>
 #include <type_traits>
@@ -101,8 +102,9 @@ struct Eof {};
 class Token {
 public:
     template<typename T>
-    explicit Token(T value)
-        : variant{std::move(value)} {}
+        requires(!std::same_as<std::remove_cvref_t<T>, Token>)
+    explicit Token(T&& value)
+        : variant{std::forward<T>(value)} {}
 
     template<typename T>
     [[nodiscard]] bool is() const {
