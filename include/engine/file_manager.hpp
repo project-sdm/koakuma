@@ -102,6 +102,8 @@ public:
     [[nodiscard]] FileId open_copy(FileId fid, std::filesystem::path filename);
     void close(const FileId& fid);
 
+    void init_file(FileId fid);
+
     [[nodiscard]] static bool exists(const std::filesystem::path& filename);
 
     [[nodiscard]] pnum_t alloc_page(const FileId& fid);

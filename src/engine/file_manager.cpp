@@ -149,6 +149,11 @@ void FileManager::close(const FileId& fid) {
         throw std::runtime_error("file is not open");
 }
 
+void FileManager::init_file(FileId fid) {
+    auto& file = open_files.at(fid);
+    write_file_header(file.stream, FileHeader{});
+}
+
 pnum_t FileManager::alloc_page(const FileId& fid) {
     auto& file = open_files.at(fid);
 
