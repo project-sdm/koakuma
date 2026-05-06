@@ -1,8 +1,12 @@
 #include "query_executor.hpp"
+#include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <print>
+#include <ranges>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -10,6 +14,7 @@
 #include "engine/engine.hpp"
 #include "parser/ast.hpp"
 #include "parser/token.hpp"
+#include "rapidcsv/rapidcsv.h"
 #include "seq_file.hpp"
 
 namespace volcano {
@@ -243,8 +248,39 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
     }
 
     if (stmt.file_path) {
-        // std::string_view path = *stmt.file_path;
-        // TODO: load csv file
+        // load from csv
+        auto table = catalog.get_table(engine, stmt.table_name);
+        assert(table);
+
+        rapidcsv::Document doc{*stmt.file_path};
+
+        for (std::size_t i = 0; i < doc.GetRowCount(); ++i) {
+            auto doc_row = doc.GetRow<std::string>(i);
+
+            if (doc_row.size() != columns.size())
+                throw std::runtime_error("column count mismatch");
+
+            Row row = std::ranges::views::zip_transform(
+                          [](const auto& col, const auto& val) -> Value {
+                              switch (col.type) {
+                                  case ColumnType::STRING:
+                                      return val;
+                                  case ColumnType::INT:
+                                      return std::stoi(val);
+                                  case ColumnType::FLOAT:
+                                      return std::stod(val);
+                                  case ColumnType::BOOL:
+                                      return val == "true";
+                                  default:
+                                      std::unreachable();
+                              }
+                          },
+                          columns, doc_row) |
+                      std::ranges::to<Row>();
+
+            std::println("inserting {}", row);
+            table->insert(row);
+        }
     }
 }
 
