@@ -56,6 +56,8 @@ bool FileManager::read_page(std::fstream& file, pnum_t pnum, std::span<u8> data)
     file.read(reinterpret_cast<char*>(data.data()),
               static_cast<std::streamsize>(data.size_bytes()));
 
+    read_counter += 1;
+
     if (!file.good()) {
         file.clear();
         return false;
@@ -72,6 +74,8 @@ void FileManager::write_page(std::fstream& file, pnum_t pnum, std::span<const u8
     file.write(reinterpret_cast<const char*>(data.data()),
                static_cast<std::streamsize>(data.size_bytes()));
     file.flush();
+
+    write_counter += 1;
 }
 
 constexpr u64 FileManager::gen_id() {
@@ -197,4 +201,17 @@ bool FileManager::exists(const std::filesystem::path& filename) {
 const std::filesystem::path& FileManager::file_path(FileId fid) const {
     const auto& file = open_files.at(fid);
     return file.path;
+}
+
+u64 FileManager::get_read_counter() const {
+    return read_counter;
+}
+
+u64 FileManager::get_write_counter() const {
+    return write_counter;
+}
+
+void FileManager::reset_rw_counters() {
+    read_counter = 0;
+    write_counter = 0;
 }

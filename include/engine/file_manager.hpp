@@ -75,13 +75,16 @@ private:
     std::unordered_map<FileId, OpenFile> open_files;
     std::vector<u8> buf{std::vector<u8>(PAGE_SIZE)};
 
+    u64 read_counter = 0;
+    u64 write_counter = 0;
+
     [[nodiscard]] static constexpr long page_offset(pnum_t pnum);
 
     static std::optional<std::fstream> open_inner(const std::filesystem::path& filename);
     static std::fstream open_create_inner(const std::filesystem::path& filename);
 
-    [[nodiscard]] static bool read_page(std::fstream& file, pnum_t pnum, std::span<u8> data);
-    static void write_page(std::fstream& file, pnum_t pnum, std::span<const u8> data);
+    [[nodiscard]] bool read_page(std::fstream& file, pnum_t pnum, std::span<u8> data);
+    void write_page(std::fstream& file, pnum_t pnum, std::span<const u8> data);
 
     constexpr u64 gen_id();
 
@@ -115,6 +118,11 @@ public:
 
     template<typename UserHeader>
     void write_user_header(const FileId& fid, const UserHeader& usr_header);
+
+    u64 get_read_counter() const;
+    u64 get_write_counter() const;
+
+    void reset_rw_counters();
 };
 
 template<typename UserHeader>
