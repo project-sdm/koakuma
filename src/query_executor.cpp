@@ -6,6 +6,7 @@
 #include <optional>
 #include <print>
 #include <ranges>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -254,28 +255,27 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
 
         rapidcsv::Document doc{*stmt.file_path};
 
+        if (doc.GetColumnCount() != columns.size())
+            throw std::runtime_error("column count mismatch");
+
         for (std::size_t i = 0; i < doc.GetRowCount(); ++i) {
-            auto doc_row = doc.GetRow<std::string>(i);
+            Row row = columns | std::views::enumerate |
+                      std::views::transform([&](const auto&& pair) -> Value {
+                          auto&& [j, col] = pair;
 
-            if (doc_row.size() != columns.size())
-                throw std::runtime_error("column count mismatch");
-
-            Row row = std::ranges::views::zip_transform(
-                          [](const auto& col, const auto& val) -> Value {
-                              switch (col.type) {
-                                  case ColumnType::STRING:
-                                      return val;
-                                  case ColumnType::INT:
-                                      return std::stoi(val);
-                                  case ColumnType::FLOAT:
-                                      return std::stod(val);
-                                  case ColumnType::BOOL:
-                                      return val == "true";
-                                  default:
-                                      std::unreachable();
-                              }
-                          },
-                          columns, doc_row) |
+                          switch (col.type) {
+                              case ColumnType::STRING:
+                                  return doc.GetCell<std::string>(j, i);
+                              case ColumnType::INT:
+                                  return doc.GetCell<int>(j, i);
+                              case ColumnType::FLOAT:
+                                  return doc.GetCell<double>(j, i);
+                              case ColumnType::BOOL:
+                                  return doc.GetCell<bool>(j, i);
+                              default:
+                                  std::unreachable();
+                          }
+                      }) |
                       std::ranges::to<Row>();
 
             std::println("inserting {}", row);

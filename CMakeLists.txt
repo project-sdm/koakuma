@@ -11,6 +11,7 @@ add_executable(koakuma
   src/api/rest_server.cpp
   src/catalog.cpp
   src/cross.cpp
+  src/csv_extra.cpp
   src/engine/buffer_manager.cpp
   src/engine/engine.cpp
   src/engine/file_manager.cpp
