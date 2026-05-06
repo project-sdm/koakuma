@@ -11,6 +11,8 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include "types.hpp"
@@ -45,6 +47,8 @@
     })
 
 namespace util {
+    std::string getenv_or(const char* name, std::string_view default_value);
+
     template<typename T>
     concept iter = requires(T it) {
         typename T::value_type;

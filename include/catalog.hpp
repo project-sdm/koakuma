@@ -24,14 +24,46 @@ namespace catalog {
         SeqFile::Cursor cursor();
     };
 
-    std::filesystem::path table_path(const std::string& name);
+    class Catalog {
+    private:
+        std::filesystem::path data_path;
 
-    [[nodiscard]] bool create_table(Engine& eng,
-                                    const std::string& name,
-                                    std::vector<Column> columns,
-                                    std::size_t pkey_col);
+        [[nodiscard]] std::filesystem::path index_path(const std::string& table_name,
+                                                       const std::string& col_name) const;
 
-    std::optional<Table> get_table(Engine& eng, const std::string& name);
+        template<typename Index>
+        void create_index(Engine& eng,
+                          const std::string& table_name,
+                          const std::string& col_name) const;
+
+    public:
+        explicit Catalog(std::filesystem::path data_path);
+
+        [[nodiscard]] std::filesystem::path table_path(const std::string& name) const;
+        [[nodiscard]] std::optional<Table> get_table(Engine& eng, const std::string& name) const;
+
+        [[nodiscard]] bool create_table(Engine& eng,
+                                        const std::string& name,
+                                        std::vector<Column> columns,
+                                        std::size_t pkey_col) const;
+    };
+
+    template<typename Index>
+    void Catalog ::create_index(Engine& eng,
+                                const std::string& table_name,
+                                const std::string& col_name) const {
+        std::string path = index_path(table_name, col_name);
+
+        FileId fid = eng.file_mgr.open_create(path);
+        eng.file_mgr.init_file(fid);
+
+        {
+            Index index{eng, fid};
+            index.init();
+        }
+
+        eng.file_mgr.close(fid);
+    }
 
 }  // namespace catalog
 

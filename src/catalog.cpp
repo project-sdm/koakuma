@@ -1,5 +1,11 @@
 #include "catalog.hpp"
 #include <cstddef>
+#include <filesystem>
+#include <print>
+#include <utility>
+#include "engine/file_manager.hpp"
+#include "index/btree.hpp"
+#include "index/hash.hpp"
 #include "seq_file.hpp"
 #include "util.hpp"
 
@@ -28,21 +34,45 @@ SeqFile::Cursor Table::cursor() {
 
 namespace catalog {
 
-    std::filesystem::path table_path(const std::string& name) {
-        return std::format("{}.table.bin", name);
+    Catalog::Catalog(std::filesystem::path data_path)
+        : data_path{std::move(data_path)} {
+        std::filesystem::create_directories(this->data_path);
     }
 
-    [[nodiscard]] bool create_table(Engine& eng,
-                                    const std::string& name,
-                                    std::vector<Column> columns,
-                                    std::size_t pkey_col) {
+    std::filesystem::path Catalog::table_path(const std::string& name) const {
+        return data_path / std::format("{}.table.bin", name);
+    }
+
+    std::filesystem::path Catalog::index_path(const std::string& table_name,
+                                              const std::string& col_name) const {
+        return data_path / std::format("{}.{}.index.bin", table_name, col_name);
+    }
+
+    [[nodiscard]] bool Catalog::create_table(Engine& eng,
+                                             const std::string& name,
+                                             std::vector<Column> columns,
+                                             std::size_t pkey_col) const {
         assert(pkey_col < columns.size());
 
         auto path = table_path(name);
         if (FileManager::exists(path))
             return false;
 
+        for (const auto& col : columns) {
+            if (col.index) {
+                switch (*col.index) {
+                    case IndexType::HASH:
+                        create_index<HashIndex>(eng, name, col.name);
+                        break;
+                    case IndexType::BTREE:
+                        create_index<BTreeIndex>(eng, name, col.name);
+                        break;
+                }
+            }
+        }
+
         FileId fid = eng.file_mgr.open_create(path);
+        eng.file_mgr.init_file(fid);
 
         {
             SeqFile seq_file{eng, fid};
@@ -53,7 +83,7 @@ namespace catalog {
         return true;
     }
 
-    std::optional<Table> get_table(Engine& eng, const std::string& name) {
+    std::optional<Table> Catalog::get_table(Engine& eng, const std::string& name) const {
         FileId fid = TRY_OPT(eng.file_mgr.open(table_path(name)));
         SeqFile seq_file{eng, fid};
         return Table{seq_file};

@@ -1,9 +1,27 @@
 #include <cassert>
 #include <format>
 #include <print>
-#include "engine/engine.hpp"
+#include "catalog.hpp"
 #include "engine/file_manager.hpp"
-#include "index/btree.hpp"
+#include "parser/parser.hpp"
+#include "query_executor.hpp"
+#include "util.hpp"
+
+class PrintSink : public QueryExecutor::RowSink {
+public:
+    void on_columns(const std::vector<Column>& columns) override {
+        for (const auto& col : columns)
+            std::print("{} ", col.name);
+
+        std::println();
+    }
+
+    void on_row(const Row& row) override {
+        std::println("{}", row);
+    }
+
+    ~PrintSink() override = default;
+};
 
 int main() {
     std::println(R"( _  __           _                          )");
@@ -15,74 +33,33 @@ int main() {
     std::println("Page size: {}", PAGE_SIZE);
     std::println();
 
+    std::ifstream file{"./data/test.sql"};
+    if (!file.is_open()) {
+        std::println("{}", std::make_error_code(std::errc(errno)).message());
+        return EXIT_FAILURE;
+    }
+
+    std::string source{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    file.close();
+
+    parser::Parser parser{source};
+    auto res = parser.source_file();
+
+    if (!res) {
+        std::println("{}", res.error());
+        return 1;
+    }
+
+    std::println("{}", *res);
+
     Engine eng{};
+    QueryExecutor executor{eng};
 
-    auto fid = eng.file_mgr.open_create("hello.bin");
+    catalog::Catalog catalog{util::getenv_or("KOAKUMA_DATA_PATH", "./.data")};
 
-    BTreeIndex index{eng, fid};
+    PrintSink sink{};
 
-    index.init();
-
-    std::vector<int> nums;
-
-    for (int i = 0; i < 64; ++i)
-        nums.push_back(std::rand() % 100);
-
-    for (int key : nums) {
-        std::println("adding {}", key);
-        index.add(key, Rid{0, 0});
-        index.ugly_print();
-        std::println();
-    }
-
-    index.ugly_print();
-    std::println();
-
-    for (int key : nums) {
-        std::println("removing {}", key);
-        index.remove(key);
-        index.ugly_print();
-        std::println();
-    }
-
-    return 0;
-
-    // auto cursor = index.search(1);
-    // while (auto rid = cursor.next())
-    //     std::println("{} {}", rid->pnum, rid->slot_idx);
-
-    // auto cursor = index.range_search(21, 100);
-    // while (auto rid = cursor.next()) {
-    //     std::println("rid: {},{}", rid->pnum, rid->slot_idx);
-    // }
-
-    // index.remove(0);
-    // index.remove(31);
-    // index.remove(8);
-
-    // index.ugly_print();
-
-    // index.add(5, Rid{static_cast<u32>(4), static_cast<u32>(8)});
-    // index.add(6, Rid{static_cast<u32>(6), static_cast<u32>(7)});
-
-    // index.add(37, Rid{static_cast<u32>(4), static_cast<u32>(8)});
-    // index.add(38, Rid{static_cast<u32>(6), static_cast<u32>(7)});
-
-    index.ugly_print();
-    std::println();
-
-    std::println("removing 24");
-    index.remove(24);
-    index.ugly_print();
-    std::println();
-
-    std::println("removing 16");
-    index.remove(16);
-    index.ugly_print();
-    std::println();
-
-    // std::println("starting koakuma REST API server...");
-    // return api::run_rest_server();
+    executor.exec(catalog, *res, sink);
 
     return 0;
 }

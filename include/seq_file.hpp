@@ -6,6 +6,7 @@
 #include <format>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 #include "engine/engine.hpp"
@@ -38,19 +39,24 @@ enum class ColumnType : u8 {
     STRING,
 };
 
+enum class IndexType : u8 {
+    HASH,
+    BTREE,
+};
+
 struct Column {
     std::string name;
     ColumnType type{};
-    bool is_unique = false;
+    std::optional<IndexType> index;
 
     Column();
-    Column(std::string name, ColumnType type);
+    Column(std::string name, ColumnType type, std::optional<IndexType> index);
 };
 
 template<>
 struct pack::PackSize<Column> {
     std::size_t operator()(const Column& col) const {
-        return pack_size<>(col.name) + pack_size<>(col.type) + pack_size<>(col.is_unique);
+        return pack_size<>(col.name) + pack_size<>(col.type) + pack_size<>(col.index);
     }
 };
 
@@ -59,7 +65,7 @@ struct pack::Pack<Column> {
     void operator()(const Column& col, u8*& dest) const {
         pack<>(col.name, dest);
         pack<>(col.type, dest);
-        pack<>(col.is_unique, dest);
+        pack<>(col.index, dest);
     }
 };
 
@@ -68,7 +74,7 @@ struct pack::Unpack<Column> {
     void operator()(Column& dest, const u8*& src) const {
         unpack<>(dest.name, src);
         unpack<>(dest.type, src);
-        unpack<>(dest.is_unique, src);
+        unpack<>(dest.index, src);
     }
 };
 

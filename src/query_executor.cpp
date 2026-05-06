@@ -65,7 +65,7 @@ namespace volcano {
     class SeqScan {
     public:
         std::optional<Row> next() {
-            return cursor.next();
+            return TRY_OPT(cursor.next()).second;
         }
 
         explicit SeqScan(SeqFile::Cursor cursor)
@@ -194,11 +194,16 @@ namespace {
 QueryExecutor::QueryExecutor(Engine& engine)
     : engine{engine} {}
 
-u32 QueryExecutor::exec(const parser::SourceFile& source_file, RowSink& sink) {
-    Executor executor{engine, sink};
+u32 QueryExecutor::exec(const catalog::Catalog& catalog,
+                        const parser::SourceFile& source_file,
+                        RowSink& sink) {
+    Executor executor{engine, catalog, sink};
 
-    for (const auto& stmt : source_file.statements)
+    for (const auto& stmt : source_file.statements) {
+        std::println("==================================");
         std::visit(executor, stmt);
+        std::println();
+    }
 
     return static_cast<u32>(source_file.statements.size());
 }
@@ -212,13 +217,25 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
     std::size_t pkey_col = 0;
     for (std::size_t i = 0; i < n_columns; ++i) {
         const auto& col = stmt.columns[i];
-        if (col.constraint && std::holds_alternative<parser::PrimaryKey>(*col.constraint))
-            pkey_col = i;
+        std::optional<IndexType> col_index = std::nullopt;
 
-        columns.emplace_back(col.name, get_col_type(col.type));
+        if (col.constraint) {
+            if (std::holds_alternative<parser::PrimaryKey>(*col.constraint)) {
+                pkey_col = i;
+            } else if (const auto* index = std::get_if<parser::Index>(&*col.constraint)) {
+                if (index->name == "hash")
+                    col_index = IndexType::HASH;
+                else if (index->name == "btree")
+                    col_index = IndexType::BTREE;
+                else
+                    std::println("invalid index name: `{}`", index->name);
+            }
+        }
+
+        columns.emplace_back(col.name, get_col_type(col.type), col_index);
     }
 
-    bool created = catalog::create_table(engine, stmt.table_name, columns, pkey_col);
+    bool created = catalog.create_table(engine, stmt.table_name, columns, pkey_col);
 
     if (!created) {
         std::println("table {} already exists", stmt.table_name);
@@ -232,7 +249,7 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
 }
 
 void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) {
-    auto table = catalog::get_table(engine, stmt.table_name);
+    auto table = catalog.get_table(engine, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;
@@ -240,7 +257,7 @@ void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) {
 
     sink.on_columns(table->get_meta().columns);
 
-    auto root = volcano::VolcanoIterator{volcano::SeqScan{table->cursor()}};
+    volcano::VolcanoIterator root{volcano::SeqScan{table->cursor()}};
 
     if (stmt.filter) {
         auto meta = table->get_meta();
@@ -254,7 +271,7 @@ void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) {
 }
 
 void QueryExecutor::Executor::operator()(const parser::InsertStatement& stmt) const {
-    auto table = catalog::get_table(engine, stmt.table_name);
+    auto table = catalog.get_table(engine, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;
@@ -270,7 +287,7 @@ void QueryExecutor::Executor::operator()(const parser::InsertStatement& stmt) co
 // bool applies(const Row& row, parser::Filter filter);
 
 void QueryExecutor::Executor::operator()(const parser::DeleteStatement& stmt) const {
-    auto table = catalog::get_table(engine, stmt.table_name);
+    auto table = catalog.get_table(engine, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;
