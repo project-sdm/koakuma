@@ -1,10 +1,9 @@
 #include <cassert>
 #include <format>
 #include <print>
-#include <vector>
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
-#include "seq_file.hpp"
+#include "index/btree.hpp"
 
 int main() {
     std::println(R"( _  __           _                          )");
@@ -20,42 +19,35 @@ int main() {
 
     auto fid = eng.file_mgr.open_create("hello.bin");
 
-    std::vector<Column> columns = {
-        {    "id",    ColumnType::INT},
-        {  "name", ColumnType::STRING},
-        {"active",   ColumnType::BOOL},
-    };
+    BTreeIndex index{eng, fid};
 
-    SeqFile seq_file{eng, fid};
-    seq_file.init(columns, 0);
+    index.init();
 
-    for (int i = 0; i < 20; ++i) {
-        int key = 100 - i;
-        std::println("inserting {}", key);
-        seq_file.add({key, std::format("hello {}", i + 1), (bool)(i % 2)});
+    std::vector<int> nums;
+
+    for (int i = 0; i < 64; ++i)
+        nums.push_back(std::rand() % 100);
+
+    for (int key : nums) {
+        std::println("adding {}", key);
+        index.add(key, Rid{0, 0});
+        index.ugly_print();
+        std::println();
     }
 
-    for (auto row : seq_file)
-        std::println("{} ", row);
+    index.ugly_print();
+    std::println();
 
-    // BTreeIndex index{eng, fid};
+    for (int key : nums) {
+        std::println("removing {}", key);
+        index.remove(key);
+        index.ugly_print();
+        std::println();
+    }
 
-    // index.init();
+    return 0;
 
-    // for (int i = 0; i < 32; ++i) {
-    //     int key = i;
-    //     index.add(key, Rid{static_cast<u32>(i), static_cast<u32>(i + 1)});
-    //     index.ugly_print();
-    //     std::println();
-    // }
-
-    // index.add(1, Rid{0, 0});
-    // index.add(2, Rid{0, 0});
-
-    // index.ugly_print();
-    // std::println();
-
-    // auto cursor = index.search(0);
+    // auto cursor = index.search(1);
     // while (auto rid = cursor.next())
     //     std::println("{} {}", rid->pnum, rid->slot_idx);
 
@@ -65,8 +57,10 @@ int main() {
     // }
 
     // index.remove(0);
-    // index.remove(32);
+    // index.remove(31);
     // index.remove(8);
+
+    // index.ugly_print();
 
     // index.add(5, Rid{static_cast<u32>(4), static_cast<u32>(8)});
     // index.add(6, Rid{static_cast<u32>(6), static_cast<u32>(7)});
@@ -74,22 +68,18 @@ int main() {
     // index.add(37, Rid{static_cast<u32>(4), static_cast<u32>(8)});
     // index.add(38, Rid{static_cast<u32>(6), static_cast<u32>(7)});
 
-    // index.ugly_print();
-    // std::println();
+    index.ugly_print();
+    std::println();
 
-    // std::println("removing 24");
-    // index.remove(24);
+    std::println("removing 24");
+    index.remove(24);
+    index.ugly_print();
+    std::println();
 
-    // index.ugly_print();
-    // std::println();
-
-    // std::println("removing 16");
-    // index.remove(16);
-
-    // index.insert(12, Rid{123, 345});
-
-    eng.file_mgr.close(fid);
-    */
+    std::println("removing 16");
+    index.remove(16);
+    index.ugly_print();
+    std::println();
 
     // std::println("starting koakuma REST API server...");
     // return api::run_rest_server();

@@ -59,6 +59,10 @@ private:
                                                                        pnum_t ins_left_child);
 
     bool leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 par_idx);
+    bool inner_try_borrow(NodePage& inner_page, NodePage& par_page, u32 par_idx);
+
+    void leaf_merge_with_next(NodePage& par_page, u32 par_idx);
+    void inner_merge_with_next(NodePage& par_page, u32 par_idx);
 
     [[nodiscard]] pnum_t static child_pnum(const NodePage& page, u32 child_idx);
 

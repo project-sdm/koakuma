@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <print>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -55,13 +56,14 @@ private:
         auto heap_span = page.const_data().subspan(hdr.data_begin);
         std::vector<u8> prev_data{heap_span.begin(), heap_span.end()};
 
+        u32 prev_data_begin = hdr.data_begin;
         hdr.data_begin = page.const_data().size_bytes();
 
         for (u32 i = 0; i < hdr.slot_cnt; ++i) {
             auto slot = read_slot(i);
             u32 new_pos = hdr.data_begin - slot.len;
 
-            std::span<u8> src = std::span{prev_data}.subspan(slot.pos);
+            std::span<u8> src = std::span{prev_data}.subspan(slot.pos - prev_data_begin);
             std::span<u8> dest = page.data().subspan(new_pos);
 
             std::memcpy(dest.data(), src.data(), slot.len);
@@ -151,13 +153,9 @@ public:
         return free_space() >= sizeof(Slot) + pack::pack_size(data);
     }
 
-    [[nodiscard]] constexpr Data read_data(const Slot& slot) const {
-        return pack::unpack_alloc<Data>(page.const_data().subspan(slot.pos).data());
-    }
-
     [[nodiscard]] constexpr Data read_data(u32 slot_idx) const {
         Slot slot = read_slot(slot_idx);
-        return read_data(slot);
+        return pack::unpack_alloc<Data>(page.const_data().subspan(slot.pos).data());
     }
 
     [[nodiscard]] SlotExtra read_slot_extra(u32 slot_idx) const {

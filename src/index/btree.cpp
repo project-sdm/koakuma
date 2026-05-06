@@ -134,10 +134,7 @@ std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
 
     {
         NodePage left_page{eng.buf_mgr.fetch_page(fid, left_pnum)};
-
         left_page.init();
-        left_page.header_extra().next_page = right_pnum;
-        left_page.header_extra().prev_page = og_page.const_header_extra().prev_page;
 
         while (left_page.free_space() > left_page.total_space() / 2) {
             auto [key, left_child] = take_entry();
@@ -152,10 +149,7 @@ std::tuple<pnum_t, Value, pnum_t> BTreeIndex::inner_insert_split(pnum_t og_pnum,
 
     {
         NodePage right_page{eng.buf_mgr.fetch_page(fid, right_pnum)};
-
         right_page.init();
-        right_page.header_extra().next_page = og_page.const_header_extra().next_page;
-        right_page.header_extra().prev_page = left_pnum;
 
         while (src_slot < og_page.slot_cnt() || mid_pending) {
             auto [key, left_child] = take_entry();
@@ -369,17 +363,21 @@ bool BTreeIndex::remove(const Value& key) {
         auto removed_key = leaf_page.read_data(i);
         leaf_page.remove(i);
 
-        updated_min = leaf_page.read_data(0);
-
-        // first path.pop() is an edge case for leaves.
-        // we do it here to use the existing leaf_page object
+        if (leaf_page.slot_cnt() > 0)
+            updated_min = leaf_page.read_data(0);
     }
 
+    // first path.pop() is an edge case for leaves.
     if (!path.empty()) {
         auto [par_pnum, par_idx] = path.top();
         path.pop();
 
         NodePage par_page{eng.buf_mgr.fetch_page(fid, par_pnum)};
+
+        if (updated_min && par_idx > 0) {
+            par_page.update_data(par_idx - 1, *updated_min);
+            updated_min = std::nullopt;
+        }
 
         pnum_t leaf_pnum = child_pnum(par_page, par_idx);
         std::optional<pnum_t> to_free = std::nullopt;
@@ -387,64 +385,14 @@ bool BTreeIndex::remove(const Value& key) {
         {
             NodePage leaf_page{eng.buf_mgr.fetch_page(fid, leaf_pnum)};
 
-            if (par_idx > 0) {
-                par_page.update_data(par_idx - 1, *updated_min);
-                updated_min = std::nullopt;
-            }
-
             if (leaf_page.free_space() > leaf_page.total_space() / 2) {
-                // borrow if possible, otherwise merge (with prev if possible, otherwise with next)
                 if (!leaf_try_borrow(leaf_page, par_page, par_idx)) {
-                    auto leaf_hdr_extra = leaf_page.const_header_extra();
-
-                    if (leaf_hdr_extra.prev_page != PAGE_NIL) {
-                        // merge leaf onto prev
+                    if (par_idx > 0) {
                         to_free = leaf_pnum;
-
-                        {
-                            NodePage prev_page{
-                                eng.buf_mgr.fetch_page(fid, leaf_hdr_extra.prev_page)};
-
-                            for (u32 i = 0; i < leaf_page.slot_cnt(); ++i) {
-                                Value slot_key = leaf_page.read_data(i);
-                                prev_page.push_back(leaf_page.read_slot_extra(i), slot_key);
-                            }
-                        }
-
-                        if (par_idx < par_page.slot_cnt() - 1) {
-                            assert(par_idx > 0);
-
-                            Value shifted_key = par_page.read_data(par_idx);
-                            par_page.remove(par_idx);
-                            par_page.update_data(par_idx - 1, shifted_key);
-                        } else {
-                            assert(false && "TODO: test this");
-                            par_page.remove(par_page.slot_cnt() - 1);
-                            par_page.header_extra().last_child = leaf_hdr_extra.prev_page;
-                        }
-                    } else if (leaf_hdr_extra.next_page != PAGE_NIL) {
-                        // merge next onto leaf
-                        to_free = leaf_hdr_extra.next_page;
-
-                        {
-                            NodePage next_page{
-                                eng.buf_mgr.fetch_page(fid, leaf_hdr_extra.next_page)};
-
-                            for (u32 i = 0; i < next_page.slot_cnt(); ++i) {
-                                Value slot_key = next_page.read_data(i);
-                                leaf_page.push_back(next_page.read_slot_extra(i), slot_key);
-                            }
-                        }
-
-                        if (par_idx < par_page.slot_cnt() - 1) {
-                            Value shifted_key = par_page.read_data(par_idx + 1);
-                            par_page.remove(par_idx + 1);
-                            par_page.update_data(par_idx, shifted_key);
-                        } else {
-                            assert(false && "TODO: test this");
-                            par_page.remove(par_page.slot_cnt() - 1);
-                            par_page.header_extra().last_child = leaf_pnum;
-                        }
+                        leaf_merge_with_next(par_page, par_idx - 1);
+                    } else {
+                        to_free = child_pnum(par_page, par_idx + 1);
+                        leaf_merge_with_next(par_page, par_idx);
                     }
                 }
             }
@@ -455,53 +403,96 @@ bool BTreeIndex::remove(const Value& key) {
     }
 
     while (!path.empty()) {
-        auto [pnum, idx] = path.top();
+        auto [par_pnum, par_idx] = path.top();
         path.pop();
 
-        if (updated_min) {
-            NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
+        NodePage par_page{eng.buf_mgr.fetch_page(fid, par_pnum)};
 
-            if (idx > 0) {
-                page.update_data(idx - 1, *updated_min);
-                updated_min = std::nullopt;  // this did not update the current subtree's min key
+        if (updated_min && par_idx > 0) {
+            par_page.update_data(par_idx - 1, *updated_min);
+            updated_min = std::nullopt;  // this did not update the current subtree's min key
+        }
+
+        pnum_t inner_pnum = child_pnum(par_page, par_idx);
+        std::optional<pnum_t> to_free = std::nullopt;
+
+        {
+            NodePage inner_page{eng.buf_mgr.fetch_page(fid, inner_pnum)};
+
+            if (inner_page.free_space() > inner_page.total_space() / 2) {
+                if (!inner_try_borrow(inner_page, par_page, par_idx)) {
+                    if (par_idx > 0) {
+                        to_free = inner_pnum;
+                        inner_merge_with_next(par_page, par_idx - 1);
+                    } else {
+                        for (u32 i = 0; i < par_page.slot_cnt(); ++i)
+                            std::print("{} ", par_page.read_data(i));
+                        std::println();
+                        std::println();
+
+                        to_free = child_pnum(par_page, par_idx + 1);
+                        inner_merge_with_next(par_page, par_idx);
+                    }
+                }
             }
         }
 
-        assert(false);
+        if (to_free)
+            eng.file_mgr.free_page(fid, *to_free);
+    }
+
+    {
+        std::optional<pnum_t> to_free = std::nullopt;
+
+        {
+            NodePage root_page{eng.buf_mgr.fetch_page(fid, file_hdr.root)};
+            auto root_extra = root_page.const_header_extra();
+
+            if (!is_leaf(root_extra) && root_page.slot_cnt() == 0) {
+                to_free = file_hdr.root;
+                file_hdr.root = root_extra.last_child;
+                eng.file_mgr.write_user_header(fid, file_hdr);
+            }
+        }
+
+        if (to_free)
+            eng.file_mgr.free_page(fid, *to_free);
     }
 
     return true;
 }
 
 bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 par_idx) {
-    auto hdr_extra = leaf_page.const_header_extra();
+    if (par_idx > 0) {
+        // borrow from prev
+        pnum_t prev_pnum = child_pnum(par_page, par_idx - 1);
+        NodePage prev_page{eng.buf_mgr.fetch_page(fid, prev_pnum)};
 
-    if (hdr_extra.prev_page != PAGE_NIL) {
-        NodePage prev_page{eng.buf_mgr.fetch_page(fid, hdr_extra.prev_page)};
         u32 last_slot = prev_page.slot_cnt() - 1;
 
         if (prev_page.free_space() < prev_page.total_space() / 2) {
-            Value borrowed = prev_page.read_data(last_slot);
+            Value moved_key = prev_page.read_data(last_slot);
+            Rid moved_rid = prev_page.read_slot_extra(last_slot).rid;
+
             prev_page.remove(prev_page.slot_cnt() - 1);
+            leaf_page.insert(0, SlotExtra::leaf(moved_rid), moved_key);
 
-            leaf_page.insert(0, SlotExtra::leaf(prev_page.read_slot_extra(last_slot).rid),
-                             borrowed);
-
-            assert(par_idx > 0);
-            par_page.update_data(par_idx - 1, borrowed);
+            par_page.update_data(par_idx - 1, moved_key);
             return true;
         }
     }
 
-    if (hdr_extra.next_page != PAGE_NIL) {
-        NodePage next_page{eng.buf_mgr.fetch_page(fid, hdr_extra.next_page)};
+    if (par_idx < par_page.slot_cnt()) {
+        // borrow from next
+        pnum_t next_pnum = child_pnum(par_page, par_idx + 1);
+        NodePage next_page{eng.buf_mgr.fetch_page(fid, next_pnum)};
 
         if (next_page.free_space() < next_page.total_space() / 2) {
-            Value borrowed = next_page.read_data(0);
-            next_page.remove(0);
+            Value moved_key = next_page.read_data(0);
+            Rid moved_rid = next_page.read_slot_extra(0).rid;
 
-            auto fst_extra = next_page.read_slot_extra(0);
-            leaf_page.push_back(SlotExtra::leaf(fst_extra.rid), borrowed);
+            next_page.remove(0);
+            leaf_page.push_back(SlotExtra::leaf(moved_rid), moved_key);
 
             Value new_right_min = next_page.read_data(0);
             par_page.update_data(par_idx, new_right_min);
@@ -511,6 +502,125 @@ bool BTreeIndex::leaf_try_borrow(NodePage& leaf_page, NodePage& par_page, u32 pa
     }
 
     return false;
+}
+
+bool BTreeIndex::inner_try_borrow(NodePage& inner_page, NodePage& par_page, u32 par_idx) {
+    if (par_idx > 0) {
+        pnum_t prev_pnum = child_pnum(par_page, par_idx - 1);
+        NodePage prev_page{eng.buf_mgr.fetch_page(fid, prev_pnum)};
+
+        u32 last_slot = prev_page.slot_cnt() - 1;
+
+        if (prev_page.free_space() < prev_page.total_space() / 2) {
+            Value lifted_key = prev_page.read_data(last_slot);
+            Value lowered_key = par_page.read_data(par_idx - 1);
+
+            pnum_t moved_child = prev_page.const_header_extra().last_child;
+            pnum_t prev_last_left_child = prev_page.read_slot_extra(last_slot).left_child;
+
+            prev_page.remove(last_slot);
+            prev_page.header_extra().last_child = prev_last_left_child;
+            par_page.update_data(par_idx - 1, lifted_key);
+            inner_page.insert(0, SlotExtra::inner(moved_child), lowered_key);
+
+            return true;
+        }
+    }
+
+    if (par_idx < par_page.slot_cnt()) {
+        pnum_t next_pnum = child_pnum(par_page, par_idx + 1);
+        NodePage next_page{eng.buf_mgr.fetch_page(fid, next_pnum)};
+
+        if (next_page.free_space() < next_page.total_space() / 2) {
+            Value lifted_key = next_page.read_data(0);
+            Value lowered_key = par_page.read_data(par_idx);
+
+            pnum_t moved_child = next_page.read_slot_extra(0).left_child;
+            pnum_t prev_right_child = inner_page.const_header_extra().last_child;
+
+            next_page.remove(0);
+            par_page.update_data(par_idx, lifted_key);
+            inner_page.push_back(SlotExtra::inner(prev_right_child), lowered_key);
+            inner_page.header_extra().last_child = moved_child;
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void BTreeIndex::leaf_merge_with_next(NodePage& par_page, u32 par_idx) {
+    assert(par_idx < par_page.slot_cnt());
+
+    pnum_t leaf_pnum = child_pnum(par_page, par_idx);
+    pnum_t next_pnum = child_pnum(par_page, par_idx + 1);
+
+    {
+        NodePage leaf_page{eng.buf_mgr.fetch_page(fid, leaf_pnum)};
+        NodePage next_page{eng.buf_mgr.fetch_page(fid, next_pnum)};
+
+        pnum_t next_next_pnum = next_page.const_header_extra().next_page;
+        leaf_page.header_extra().next_page = next_next_pnum;
+
+        if (next_next_pnum != PAGE_NIL) {
+            NodePage next_next_page{eng.buf_mgr.fetch_page(fid, next_next_pnum)};
+            next_next_page.header_extra().prev_page = leaf_pnum;
+        }
+
+        for (u32 i = 0; i < next_page.slot_cnt(); ++i) {
+            Value key = next_page.read_data(i);
+            auto extra = next_page.read_slot_extra(i);
+
+            leaf_page.push_back(extra, key);
+        }
+    }
+
+    if (par_idx == par_page.slot_cnt() - 1) {
+        // removing the last key is special
+        par_page.remove(par_idx);
+        par_page.header_extra().last_child = leaf_pnum;
+    } else {
+        Value shifted_key = par_page.read_data(par_idx + 1);
+        par_page.remove(par_idx + 1);
+        par_page.update_data(par_idx, shifted_key);
+    }
+}
+
+void BTreeIndex::inner_merge_with_next(NodePage& par_page, u32 par_idx) {
+    assert(par_idx < par_page.slot_cnt());
+
+    pnum_t inner_pnum = child_pnum(par_page, par_idx);
+    pnum_t next_pnum = child_pnum(par_page, par_idx + 1);
+
+    {
+        NodePage inner_page{eng.buf_mgr.fetch_page(fid, inner_pnum)};
+        NodePage next_page{eng.buf_mgr.fetch_page(fid, next_pnum)};
+
+        pnum_t inner_last_child = inner_page.const_header_extra().last_child;
+
+        Value lowered_key = par_page.read_data(par_idx);
+        inner_page.push_back(SlotExtra::inner(inner_last_child), lowered_key);
+
+        for (u32 i = 0; i < next_page.slot_cnt(); ++i) {
+            Value key = next_page.read_data(i);
+            auto extra = next_page.read_slot_extra(i);
+
+            inner_page.push_back(extra, key);
+        }
+
+        inner_page.header_extra().last_child = next_page.const_header_extra().last_child;
+    }
+
+    if (par_idx == par_page.slot_cnt() - 1) {
+        // removing the last key is special
+        par_page.remove(par_idx);
+        par_page.header_extra().last_child = inner_pnum;
+    } else {
+        Value shifted_key = par_page.read_data(par_idx + 1);
+        par_page.remove(par_idx + 1);
+        par_page.update_data(par_idx, shifted_key);
+    }
 }
 
 [[nodiscard]] pnum_t BTreeIndex::child_pnum(const NodePage& page, u32 child_idx) {
