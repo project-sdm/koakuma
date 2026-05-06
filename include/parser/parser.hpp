@@ -59,12 +59,14 @@ namespace parser {
 
     template<typename T>
     std::expected<std::optional<T>, CompileError> Parser::accept_var() {
-        auto t = TRY(tokens.peek()->get());
+        auto& t = tokens.peek()->get();
 
-        if (auto* tok = t.get_if<T>()) {
+        if (!t)
+            return std::unexpected{t.error()};
+
+        if (t->get_if<T>()) {
             auto res = tokens.next();
-            assert(res.has_value());
-            return *tok;
+            return (*res)->get<T>();
         }
 
         return std::nullopt;
@@ -83,13 +85,11 @@ namespace parser {
 
     template<typename T>
     std::expected<T, CompileError> Parser::expect_var() {
-        auto t = TRY(tokens.peek()->get());
+        auto t_opt = tokens.next();
+        auto t = TRY(*std::move(t_opt));
 
-        if (auto* tok = t.get_if<T>()) {
-            auto res = tokens.next();
-            assert(res.has_value());
+        if (auto* tok = t.get_if<T>())
             return *tok;
-        }
 
         return std::unexpected{ParseError::UnexpectedToken};
     }
