@@ -19,9 +19,10 @@ bool Rid::operator==(const Rid& other) const = default;
 
 Column::Column() = default;
 
-Column::Column(std::string name, ColumnType type)
+Column::Column(std::string name, ColumnType type, std::optional<IndexType> index)
     : name{std::move(name)},
-      type{type} {}
+      type{type},
+      index{index} {}
 
 SeqFile::SlotExtra::SlotExtra(bool active)
     : active{active} {}
@@ -159,7 +160,6 @@ std::optional<Rid> SeqFile::add(const Row& row) {
 }
 
 void SeqFile::rebuild(SeqHeader& file_hdr) {
-    std::println("rebuild");
     std::vector<Row> aux_rows;
 
     {
@@ -203,12 +203,13 @@ void SeqFile::rebuild(SeqHeader& file_hdr) {
         while (aux_it != aux_end || main_cursor.peek()) {
             Row next_row;
 
-            if (aux_it != aux_end && (!main_cursor.peek() ||
-                                      (*aux_it)[pkey_col] < main_cursor.peek()->get()[pkey_col])) {
+            if (aux_it != aux_end &&
+                (!main_cursor.peek() ||
+                 (*aux_it)[pkey_col] < main_cursor.peek()->get().second[pkey_col])) {
                 next_row = *aux_it;
                 ++aux_it;
             } else {
-                next_row = *main_cursor.next();
+                next_row = main_cursor.next()->second;
             }
 
             if (!cur_page.will_fit(next_row)) {
@@ -295,7 +296,7 @@ SeqFile::SeqPage& Cursor::page() {
     return *page_buf;
 }
 
-std::optional<Row> Cursor::next() {
+std::optional<Cursor::value_type> Cursor::next() {
     while (cur_pnum != PAGE_NIL) {
         if (cur_slot == page().slot_cnt()) {
             page_buf.reset();
@@ -318,9 +319,11 @@ std::optional<Row> Cursor::next() {
         return std::nullopt;
 
     Row row = page().read_data(cur_slot);
+    Rid rid{cur_pnum, cur_slot};
+
     cur_slot += 1;
 
-    return row;
+    return std::make_pair(rid, std::move(row));
 }
 
 using RangeCursor = SeqFile::RangeCursor;

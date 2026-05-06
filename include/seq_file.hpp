@@ -145,7 +145,7 @@ public:
         SeqPage& page();
 
     public:
-        using value_type = Row;
+        using value_type = std::pair<Rid, Row>;
 
         explicit Cursor(SeqFile& seq_file);
 
