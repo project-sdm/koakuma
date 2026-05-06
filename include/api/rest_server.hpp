@@ -9,62 +9,55 @@
 
 namespace api {
 
-inline constexpr u32 MAX_QUERY_BYTES = 64 * 1024;
+    enum class ErrorCode : u8 {
+        ValidationError,
+        ParseError,
+        ExecutionError,
+        InternalError,
+    };
 
-enum class ErrorCode {
-    ValidationError,
-    ParseError,
-    ExecutionError,
-    InternalError,
-};
+    struct ServerConfig {
+        std::string host;
+        u16 port;
+        std::string data_path;
+    };
 
-struct ServerConfig {
-    std::string host = "0.0.0.0";
-    u16 port = 8080;
-};
+    struct ResponseTiming {
+        u32 parse_ms = 0;
+        u32 exec_ms = 0;
+    };
 
-struct ResponseTiming {
-    u32 parse_ms = 0;
-    u32 exec_ms = 0;
-};
+    struct ResponseError {
+        ErrorCode code = ErrorCode::InternalError;
+        std::string message;
+        std::string detail;
+    };
 
-struct ResponseError {
-    ErrorCode code = ErrorCode::InternalError;
-    std::string message;
-    std::string detail;
-};
+    struct ResponseData {
+        u32 accepted_statements = 0;
+        ResponseTiming timing;
+    };
 
-struct ResponseData {
-    u32 accepted_statements = 0;
-    ResponseTiming timing;
-};
+    struct ApiResponse {
+        bool ok = false;
+        u32 request_id = 0;
+        std::string_view data_json;
+        ResponseError error;
+    };
 
-struct ApiResponse {
-    bool ok = false;
-    u32 request_id = 0;
-    std::string_view data_json;
-    ResponseError error;
-};
+    class RestServer {
+    public:
+        explicit RestServer(ServerConfig config = {});
 
-class RestServer {
-public:
-    explicit RestServer(ServerConfig config = {});
-    ~RestServer();
+        [[nodiscard]] int run();
 
-    RestServer(const RestServer&) = delete;
-    RestServer& operator=(const RestServer&) = delete;
-    RestServer(RestServer&&) noexcept;
-    RestServer& operator=(RestServer&&) noexcept;
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> impl;
+    };
 
-    int run();
+    int run_rest_server(const ServerConfig& config = {});
 
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl;
-};
-
-int run_rest_server(const ServerConfig& config = {});
-
-}
+}  // namespace api
 
 #endif
