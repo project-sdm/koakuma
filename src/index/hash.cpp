@@ -11,7 +11,7 @@
 #include "seq_file.hpp"
 #include "types.hpp"
 
-// largest depth that fits within a single page
+// largest depth such that the directory fits within the header page
 static constexpr u8 MAX_DEPTH = 8;
 
 HashIndex::HashIndex(Engine& eng, FileId fid)
@@ -192,7 +192,10 @@ void HashIndex::ugly_print() const {
     }
 }
 
-HashIndex::Cursor::Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, HashValue search_key)
+HashIndex::Cursor::Cursor(BufferManager& buf_mgr,
+                          FileId fid,
+                          pnum_t init_pnum,
+                          HashValue search_key)
     : fid{fid},
       buf_mgr{buf_mgr},
       cur_pnum{init_pnum},
