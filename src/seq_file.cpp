@@ -279,44 +279,46 @@ SeqFile::Meta SeqFile::read_meta() {
 using Cursor = SeqFile::Cursor;
 
 Cursor::Cursor(SeqFile& seq_file)
-    : seq_file{seq_file} {}
+    : seq_file{seq_file},
+      seq_hdr{seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid)} {}
 
 Cursor SeqFile::cursor() {
     return Cursor{*this};
 }
 
+SeqFile::SeqPage& Cursor::page() {
+    assert(cur_pnum != PAGE_NIL);
+
+    if (!page_buf)
+        page_buf.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
+
+    return *page_buf;
+}
+
 std::optional<Row> Cursor::next() {
-    while (true) {
-        if (cur_pnum == PAGE_NIL)
-            return std::nullopt;
-
-        if (!page)
-            page.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
-
-        SlotExtra extra = page->read_slot_extra(cur_slot);
-
-        std::optional<Row> row = std::nullopt;
-        if (extra.active)
-            row = page->read_data(cur_slot);
-
-        cur_slot += 1;
-        assert(cur_slot <= page->slot_cnt());
-
-        if (cur_slot == page->slot_cnt()) {
-            page.reset();
+    while (cur_pnum != PAGE_NIL) {
+        if (cur_slot == page().slot_cnt()) {
+            page_buf.reset();
             cur_slot = 0;
+            cur_pnum += 1;
 
-            auto file_hdr = seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid);
-
-            assert(cur_pnum <= calc_aux_pnum(file_hdr));
-
-            if (cur_pnum == calc_aux_pnum(file_hdr))
+            if (cur_pnum > calc_aux_pnum(seq_hdr))
                 cur_pnum = PAGE_NIL;
-            else
-                cur_pnum += 1;
+
+            continue;
         }
 
-        if (row)
-            return row;
+        if (page().read_slot_extra(cur_slot).active)
+            break;
+
+        cur_slot += 1;
     }
+
+    if (cur_pnum == PAGE_NIL)
+        return std::nullopt;
+
+    Row row = page().read_data(cur_slot);
+    cur_slot += 1;
+
+    return row;
 }

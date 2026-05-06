@@ -137,9 +137,12 @@ private:
 public:
     class Cursor {
         SeqFile& seq_file;
-        std::optional<SeqPage> page = std::nullopt;
+        SeqHeader seq_hdr;
+        std::optional<SeqPage> page_buf = std::nullopt;
         u32 cur_slot = 0;
         pnum_t cur_pnum = 1;
+
+        SeqPage& page();
 
     public:
         using value_type = Row;
