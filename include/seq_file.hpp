@@ -13,6 +13,7 @@
 #include "layout/slotted_page.hpp"
 #include "pack.hpp"
 #include "types.hpp"
+#include "util.hpp"
 
 struct Rid {
     pnum_t pnum;
@@ -134,27 +135,21 @@ private:
     void rebuild(SeqHeader& file_hdr);
 
 public:
-    class iterator {
-        std::optional<Row> row_buf = std::nullopt;
+    class Cursor {
         SeqFile& seq_file;
-        SeqHeader seq_hdr;
-        std::optional<SeqPage> page_buf = std::nullopt;
-        pnum_t cur_pnum;
+        std::optional<SeqPage> page = std::nullopt;
         u32 cur_slot = 0;
-
-        SeqPage& page();
-
-        void find_active();
+        pnum_t cur_pnum = 1;
 
     public:
         using value_type = Row;
 
-        explicit iterator(SeqFile& seq_file, pnum_t init_pnum, u32 init_slot);
+        explicit Cursor(SeqFile& seq_file);
 
-        value_type operator*();
-        iterator& operator++();
-        bool operator==(const iterator& other) const;
+        std::optional<value_type> next();
     };
+
+    static_assert(util::iter<Cursor>);
 
     SeqFile(Engine& engine, FileId fid);
 
@@ -173,8 +168,7 @@ public:
     [[nodiscard]] std::optional<Row> search(const Value& pkey);
     std::optional<Rid> remove(const Value& pkey);
 
-    [[nodiscard]] iterator begin();
-    [[nodiscard]] iterator end();
+    Cursor cursor();
 };
 
 template<>

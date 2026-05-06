@@ -22,12 +22,8 @@ std::optional<Rid> Table::insert(const Row& row) {
     return seq_file.add(row);
 }
 
-SeqFile::iterator Table::begin() {
-    return seq_file.begin();
-}
-
-SeqFile::iterator Table::end() {
-    return seq_file.end();
+SeqFile::Cursor Table::cursor() {
+    return seq_file.cursor();
 }
 
 namespace catalog {

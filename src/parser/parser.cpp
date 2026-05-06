@@ -20,7 +20,7 @@ namespace parser {
     }
 
     std::expected<Statement, CompileError> Parser::statement() {
-        auto res = TRY(tokens.peek()).get();
+        auto res = TRY(tokens.peek()->get());
 
         if (auto* tok = res.get_if<Keyword>()) {
             switch (*tok) {

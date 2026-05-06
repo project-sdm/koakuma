@@ -45,7 +45,6 @@ add_executable(koakuma
   src/parser/ast.cpp
   src/parser/lexer.cpp
   src/parser/parser.cpp
-  src/parser/peekable_lexer.cpp
   src/query_executor.cpp
   src/seq_file.cpp
   src/util.cpp

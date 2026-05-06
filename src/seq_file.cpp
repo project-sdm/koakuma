@@ -195,22 +195,20 @@ void SeqFile::rebuild(SeqHeader& file_hdr) {
 
     {
         SeqFile seq_tmp{eng, tmp_fid};
-        auto main_it = seq_tmp.begin();
-        auto main_end = seq_tmp.end();
+        util::Peekable<Cursor> main_cursor{seq_tmp.cursor()};
 
         SeqPage cur_page{eng.buf_mgr.fetch_page(fid, cur_pnum)};
         cur_page.init();
 
-        while (aux_it != aux_end || main_it != main_end) {
+        while (aux_it != aux_end || main_cursor.peek()) {
             Row next_row;
 
-            if (aux_it != aux_end &&
-                (main_it == main_end || (*aux_it)[pkey_col] < (*main_it)[pkey_col])) {
+            if (aux_it != aux_end && (!main_cursor.peek() ||
+                                      (*aux_it)[pkey_col] < main_cursor.peek()->get()[pkey_col])) {
                 next_row = *aux_it;
                 ++aux_it;
             } else {
-                next_row = *main_it;
-                ++main_it;
+                next_row = *main_cursor.next();
             }
 
             if (!cur_page.will_fit(next_row)) {
@@ -254,72 +252,6 @@ Rid SeqFile::insert_into_aux(const Row& row) {
     return insert_into_aux(row);
 }
 
-using iterator = SeqFile::iterator;
-
-iterator SeqFile::begin() {
-    return iterator{*this, 1, 0};
-}
-
-iterator SeqFile::end() {
-    // we could read at what page iterator should end, but this is cheaper
-    return iterator{*this, PAGE_NIL, 0};
-}
-
-iterator::iterator(SeqFile& seq_file, pnum_t init_pnum, u32 init_slot)
-    : seq_file{seq_file},
-      seq_hdr{seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid)},
-      cur_pnum{init_pnum},
-      cur_slot{init_slot} {
-    find_active();
-}
-
-SeqFile::SeqPage& iterator::page() {
-    assert(cur_pnum != PAGE_NIL);
-
-    if (!page_buf)
-        page_buf.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
-
-    return *page_buf;
-}
-
-void iterator::find_active() {
-    while (cur_pnum != PAGE_NIL) {
-        if (cur_slot == page().slot_cnt()) {
-            page_buf.reset();
-            cur_slot = 0;
-            cur_pnum += 1;
-
-            if (cur_pnum > calc_aux_pnum(seq_hdr))
-                cur_pnum = PAGE_NIL;
-
-            continue;
-        }
-
-        if (page().read_slot_extra(cur_slot).active)
-            return;
-
-        cur_slot += 1;
-    }
-}
-
-iterator::value_type iterator::operator*() {
-    if (!row_buf)
-        row_buf = page().read_data(cur_slot);
-
-    return *row_buf;
-}
-
-bool iterator::operator==(const iterator& other) const {
-    return cur_pnum == other.cur_pnum && cur_slot == other.cur_slot;
-}
-
-iterator& iterator::operator++() {
-    row_buf = std::nullopt;
-    cur_slot += 1;
-    find_active();
-    return *this;
-}
-
 std::optional<Rid> SeqFile::remove(const Value& pkey) {
     auto rid = TRY_OPT(find_rid_by_pkey_in_all_pages(pkey));
 
@@ -334,6 +266,7 @@ std::optional<Rid> SeqFile::remove(const Value& pkey) {
 
     return rid;
 }
+
 SeqFile::Meta::Meta(std::vector<Column> columns, std::size_t pkey_col)
     : columns{std::move(columns)},
       pkey_col{pkey_col} {}
@@ -341,4 +274,49 @@ SeqFile::Meta::Meta(std::vector<Column> columns, std::size_t pkey_col)
 SeqFile::Meta SeqFile::read_meta() {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
     return Meta{file_hdr.columns, file_hdr.pkey_col};
+}
+
+using Cursor = SeqFile::Cursor;
+
+Cursor::Cursor(SeqFile& seq_file)
+    : seq_file{seq_file} {}
+
+Cursor SeqFile::cursor() {
+    return Cursor{*this};
+}
+
+std::optional<Row> Cursor::next() {
+    while (true) {
+        if (cur_pnum == PAGE_NIL)
+            return std::nullopt;
+
+        if (!page)
+            page.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
+
+        SlotExtra extra = page->read_slot_extra(cur_slot);
+
+        std::optional<Row> row = std::nullopt;
+        if (extra.active)
+            row = page->read_data(cur_slot);
+
+        cur_slot += 1;
+        assert(cur_slot <= page->slot_cnt());
+
+        if (cur_slot == page->slot_cnt()) {
+            page.reset();
+            cur_slot = 0;
+
+            auto file_hdr = seq_file.eng.file_mgr.read_user_header<SeqHeader>(seq_file.fid);
+
+            assert(cur_pnum <= calc_aux_pnum(file_hdr));
+
+            if (cur_pnum == calc_aux_pnum(file_hdr))
+                cur_pnum = PAGE_NIL;
+            else
+                cur_pnum += 1;
+        }
+
+        if (row)
+            return row;
+    }
 }

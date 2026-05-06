@@ -5,7 +5,7 @@
 #include <optional>
 #include "ast.hpp"
 #include "error.hpp"
-#include "peekable_lexer.hpp"
+#include "parser/lexer.hpp"
 #include "util.hpp"
 
 namespace parser {
@@ -38,14 +38,14 @@ namespace parser {
         std::expected<InsertValue, CompileError> insert_value();
         std::expected<Filter, CompileError> where_declaration();
 
-        PeekableLexer tokens;
+        util::Peekable<Lexer> tokens;
     };
 
     template<auto value>
     std::expected<bool, CompileError> Parser::accept_val() {
         using T = decltype(value);
 
-        auto t = TRY(tokens.peek()).get();
+        auto t = TRY(tokens.peek()->get());
         auto* tok = t.get_if<T>();
 
         if (tok && *tok == value) {
@@ -59,7 +59,7 @@ namespace parser {
 
     template<typename T>
     std::expected<std::optional<T>, CompileError> Parser::accept_var() {
-        auto t = TRY(tokens.peek()).get();
+        auto t = TRY(tokens.peek()->get());
 
         if (auto* tok = t.get_if<T>()) {
             auto res = tokens.next();
@@ -83,7 +83,7 @@ namespace parser {
 
     template<typename T>
     std::expected<T, CompileError> Parser::expect_var() {
-        auto t = TRY(tokens.peek()).get();
+        auto t = TRY(tokens.peek()->get());
 
         if (auto* tok = t.get_if<T>()) {
             auto res = tokens.next();

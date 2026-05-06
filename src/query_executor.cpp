@@ -65,21 +65,14 @@ namespace volcano {
     class SeqScan {
     public:
         std::optional<Row> next() {
-            if (it == end)
-                return std::nullopt;
-
-            Row row = *it;
-            ++it;
-            return row;
+            return cursor.next();
         }
 
-        explicit SeqScan(catalog::Table& table)
-            : it{table.begin()},
-              end{table.end()} {}
+        explicit SeqScan(SeqFile::Cursor cursor)
+            : cursor{std::move(cursor)} {}
 
     private:
-        SeqFile::iterator it;
-        SeqFile::iterator end;
+        SeqFile::Cursor cursor;
     };
 
     class FilterVisitor {
@@ -247,7 +240,7 @@ void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) {
 
     sink.on_columns(table->get_meta().columns);
 
-    auto root = volcano::VolcanoIterator{volcano::SeqScan{*table}};
+    auto root = volcano::VolcanoIterator{volcano::SeqScan{table->cursor()}};
 
     if (stmt.filter) {
         auto meta = table->get_meta();
@@ -283,7 +276,9 @@ void QueryExecutor::Executor::operator()(const parser::DeleteStatement& stmt) co
         return;
     }
 
-    for (auto row : *table) {
+    auto cursor = table->cursor();
+
+    while (auto row = cursor.next()) {
         if (!stmt.filter.has_value() /* || applies(row, *stmt.filter) */)
             return;  // TODO: delete
     }

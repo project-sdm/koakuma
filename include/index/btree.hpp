@@ -9,6 +9,7 @@
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
 #include "seq_file.hpp"
+#include "util.hpp"
 
 // (actually a b+ tree)
 class BTreeIndex {
@@ -78,11 +79,15 @@ public:
         bool finished = false;
 
     public:
+        using value_type = Rid;
+
         explicit RangeCursor(BufferManager& buf_mgr);
         RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value key_high);
 
-        std::optional<Rid> next();
+        std::optional<value_type> next();
     };
+
+    static_assert(util::iter<RangeCursor>);
 
     BTreeIndex(Engine& engine, FileId fid);
 

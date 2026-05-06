@@ -269,7 +269,7 @@ namespace parser {
     Lexer::Lexer(std::string source)
         : source{std::move(source)} {}
 
-    std::expected<Token, CompileError> Lexer::next() {
+    std::optional<Lexer::value_type> Lexer::next() {
         while (auto opt = peek()) {
             if (!is_ignorable(*opt))
                 break;

@@ -11,6 +11,7 @@
 #include "pack.hpp"
 #include "seq_file.hpp"
 #include "types.hpp"
+#include "util.hpp"
 
 // extendible hashing
 class HashIndex {
@@ -46,10 +47,14 @@ public:
         HashValue search_key;
 
     public:
+        using value_type = Rid;
+
         Cursor(BufferManager& buf_mgr, FileId fid, pnum_t init_pnum, HashValue search_key);
 
-        std::optional<Rid> next();
+        std::optional<value_type> next();
     };
+
+    static_assert(util::iter<Cursor>);
 
     HashIndex(Engine& eng, FileId fid);
 

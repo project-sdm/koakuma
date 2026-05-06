@@ -21,8 +21,7 @@ namespace catalog {
         std::optional<Rid> insert(const Row& row);
 
         // coupled to seqfile for now (hopefully not for long)
-        SeqFile::iterator begin();
-        SeqFile::iterator end();
+        SeqFile::Cursor cursor();
     };
 
     std::filesystem::path table_path(const std::string& name);

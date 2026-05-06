@@ -4,12 +4,15 @@
 #include <array>
 #include <bit>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstring>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <span>
 #include <type_traits>
+#include <utility>
 #include "types.hpp"
 
 // https://code-examples.net/en/q/4bca16c/how-to-propagate-std-expected-errors-without-boilerplate
@@ -42,6 +45,43 @@
     })
 
 namespace util {
+    template<typename T>
+    concept iter = requires(T it) {
+        typename T::value_type;
+        { it.next() } -> std::same_as<std::optional<typename T::value_type>>;
+    };
+
+    template<iter Iter>
+    class Peekable {
+    private:
+        using value_type = typename Iter::value_type;
+
+        Iter it;
+        std::optional<value_type> buf = std::nullopt;
+
+    public:
+        template<typename... Args>
+        explicit Peekable(Args&&... args)
+            : it{std::forward<Args>(args)...} {}
+
+        std::optional<value_type> next() {
+            if (buf)
+                return *std::exchange(buf, std::nullopt);
+
+            return it.next();
+        }
+
+        std::optional<std::reference_wrapper<value_type>> peek() {
+            if (!buf)
+                buf = it.next();
+
+            if (!buf)
+                return std::nullopt;
+
+            return *buf;
+        }
+    };
+
     template<typename T>
         requires std::is_trivially_copyable_v<T>
     T span_read(std::span<const u8> data, std::size_t offset) {
