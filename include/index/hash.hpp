@@ -13,6 +13,8 @@
 #include "types.hpp"
 #include "util.hpp"
 
+using HashValue = std::variant<int, bool, std::string>;
+
 // extendible hashing
 class HashIndex {
 private:
@@ -89,6 +91,17 @@ struct pack::Unpack<HashIndex::HashHeader> {
     void operator()(HashIndex::HashHeader& hdr, const u8*& src) const {
         unpack(hdr.dir, src);
         unpack(hdr.global_depth, src);
+    }
+};
+
+template<>
+struct std::formatter<HashValue, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const HashValue& val, std::format_context& ctx) {
+        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
     }
 };
 

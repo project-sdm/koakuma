@@ -29,7 +29,6 @@ struct Rid {
 static constexpr pnum_t PAGE_NIL = -1;
 
 using Value = std::variant<int, bool, f64, std::string>;
-using HashValue = std::variant<int, bool, std::string>;
 using Row = std::vector<Value>;
 
 enum class ColumnType : u8 {
@@ -204,17 +203,6 @@ struct std::formatter<Value, char> {
     }
 
     static auto format(const Value& val, std::format_context& ctx) {
-        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
-    }
-};
-
-template<>
-struct std::formatter<HashValue, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(const HashValue& val, std::format_context& ctx) {
         return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
     }
 };
