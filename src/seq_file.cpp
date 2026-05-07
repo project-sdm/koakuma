@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
-#include <print>
 #include <stdexcept>
 #include <utility>
 #include "engine/buffer_manager.hpp"
