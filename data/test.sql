@@ -1,43 +1,21 @@
-create table "users" (
-  id uuid primary key,
-  name varchar,
+create table users (
+  id varchar primary key,
+  name varchar index hash,
   age int index btree,
-  birth_date date,
-  married bool
-);
+  birth_date varchar,
+  married bool index hash
+) from file 'data/users.csv';
 
-insert into
-  users
-values
-  ('id_6', 'name_6', 12, '28-04-1975', false),
-  ('id_5', 'name_5', 40, '18-03-2003', true),
-  ('id_4', 'name_4', 12, '28-04-1981', false),
-  ('id_3', 'name_3', 27, '25-04-2009', true),
-  ('id_2', 'name_2', 23, '22-04-2022', false),
-  ('id_1', 'name_1', 18, '28-04-2026', true);
+-- insert into users values
+--   ('id_6', 'name_6', 12, '28-04-1975', false),
+--   ('id_5', 'name_5', 40, '18-03-2003', true),
+--   ('id_4', 'name_4', 12, '28-04-1981', false),
+--   ('id_3', 'name_3', 27, '25-04-2009', true),
+--   ('id_2', 'name_2', 23, '22-04-2022', false),
+--   ('id_1', 'name_1', 18, '28-04-2026', true);
 
-select
-  *
-from
-  users;
-
-select
-  *
-from
-  users
-where
-  age between 18 and 30;
-
-select
-  *
-from
-  users
-where
-  married = true;
-
-select
-  *
-from
-  users
-where
-  name = 'name_3';
+select * from users;
+select * from users where age between 18 and 30;
+select * from users where married = true;
+select * from users where name = 'name_3';
+select * from users where id = 'id_3';

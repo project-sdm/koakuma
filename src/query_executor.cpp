@@ -13,10 +13,13 @@
 #include <vector>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
+#include "index/btree.hpp"
+#include "index/hash.hpp"
 #include "parser/ast.hpp"
 #include "parser/token.hpp"
 #include "rapidcsv/rapidcsv.h"
 #include "seq_file.hpp"
+#include "util.hpp"
 
 namespace volcano {
 
@@ -81,6 +84,39 @@ namespace volcano {
         SeqFile::Cursor cursor;
     };
 
+    class PKeyScan {
+    public:
+        PKeyScan(SeqFile& seq_file, Value search_pkey)
+            : seq_file{seq_file},
+              search_pkey{std::move(search_pkey)} {}
+
+        std::optional<Row> next() {
+            auto pkey = TRY_OPT(std::exchange(search_pkey, std::nullopt));
+            return seq_file.search(pkey);
+        }
+
+    private:
+        SeqFile& seq_file;
+        std::optional<Value> search_pkey;
+    };
+
+    template<util::iter_of<Rid> Iter>
+    class IndexScan {
+    public:
+        explicit IndexScan(SeqFile& seq_file, Iter it)
+            : seq_file{seq_file},
+              it{std::move(it)} {}
+
+        std::optional<Row> next() {
+            Rid rid = TRY_OPT(it.next());
+            return seq_file.read_rid(rid);
+        }
+
+    private:
+        SeqFile& seq_file;
+        Iter it;
+    };
+
     class FilterVisitor {
     public:
         explicit FilterVisitor(parser::FilterData data)
@@ -96,6 +132,7 @@ namespace volcano {
 
             return false;
         }
+
         bool operator()(f64 value) {
             if (auto* filter = std::get_if<parser::EqFilter>(&data))
                 if (auto* value_to_compare = std::get_if<f64>(&filter->value))
@@ -106,6 +143,7 @@ namespace volcano {
 
             return false;
         }
+
         bool operator()(bool value) {
             if (auto* filter = std::get_if<parser::EqFilter>(&data))
                 if (auto* value_to_compare = std::get_if<bool>(&filter->value))
@@ -113,6 +151,7 @@ namespace volcano {
 
             return false;
         }
+
         bool operator()(const std::string& value) {
             if (auto* filter = std::get_if<parser::EqFilter>(&data))
                 if (auto* value_to_compare = std::get_if<std::string>(&filter->value))
@@ -129,12 +168,8 @@ namespace volcano {
     public:
         std::optional<Row> next() {
             while (auto row = child.next()) {
-                for (std::size_t i = 0; i < meta.columns.size(); ++i) {
-                    const auto& col = meta.columns.at(i);
-                    if (col.name == filter.col_identifier &&
-                        std::visit(FilterVisitor{filter.data}, row->at(i)))
-                        return row;
-                }
+                if (std::visit(FilterVisitor{data}, row->at(col_num)))
+                    return row;
             }
 
             return std::nullopt;
@@ -142,13 +177,19 @@ namespace volcano {
 
         Filter(VolcanoIterator child, parser::Filter filter, SeqFile::Meta meta)
             : child{std::move(child)},
-              filter{std::move(filter)},
-              meta{std::move(meta)} {}
+              meta{std::move(meta)},
+              data{std::move(filter.data)} {
+            for (const auto&& [i, col] : std::views::enumerate(this->meta.columns)) {
+                if (col.name == filter.col_identifier)
+                    col_num = i;
+            }
+        }
 
     private:
         VolcanoIterator child;
-        parser::Filter filter;
         SeqFile::Meta meta;
+        parser::FilterData data;
+        std::size_t col_num{};
     };
 
 }  // namespace volcano
@@ -157,19 +198,16 @@ namespace {
 
     ColumnType get_col_type(DataType col) {
         switch (col) {
-            case DataType::Bool:
+            case DataType::BOOL:
                 return ColumnType::BOOL;
-            case DataType::Date:
-            case DataType::Text:
-            case DataType::Uuid:
+            case DataType::VARCHAR:
                 return ColumnType::STRING;
-            case DataType::Int:
+            case DataType::INT:
                 return ColumnType::INT;
-            case DataType::Real:
+            case DataType::REAL:
                 return ColumnType::FLOAT;
-            case DataType::Varchar:
-                return ColumnType::STRING;
         }
+
         std::unreachable();
     }
 
@@ -241,7 +279,7 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
         columns.emplace_back(col.name, get_col_type(col.type), col_index);
     }
 
-    bool created = catalog.create_table(engine, stmt.table_name, columns, pkey_col);
+    bool created = catalog.create_table(eng, stmt.table_name, columns, pkey_col);
 
     if (!created) {
         std::println("table {} already exists", stmt.table_name);
@@ -250,7 +288,7 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
 
     if (stmt.file_path) {
         // load from csv
-        auto table = catalog.get_table(engine, stmt.table_name);
+        auto table = catalog.get_table(eng, stmt.table_name);
         assert(table);
 
         rapidcsv::Document doc{*stmt.file_path};
@@ -273,6 +311,7 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
                               case ColumnType::BOOL:
                                   return doc.GetCell<bool>(j, i);
                           }
+
                           std::unreachable();
                       }) |
                       std::ranges::to<Row>();
@@ -284,29 +323,96 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
 }
 
 void QueryExecutor::Executor::operator()(const parser::SelectStatement& stmt) {
-    auto table = catalog.get_table(engine, stmt.table_name);
+    auto table = catalog.get_table(eng, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;
     }
 
-    sink.on_columns(table->get_meta().columns);
+    const auto& cols = table->get_meta().columns;
+    sink.on_columns(cols);
 
     volcano::VolcanoIterator root{volcano::SeqScan{table->cursor()}};
 
     if (stmt.filter) {
+        std::size_t col_num = table->col_num(stmt.filter->col_identifier);
+        auto col = cols.at(col_num);
+
+        if (col_num == table->pkey_col_num()) {
+            if (const auto* eq_filter = std::get_if<parser::EqFilter>(&stmt.filter->data)) {
+                std::println("using pkey");
+                auto val = lit2val(eq_filter->value, col.type);
+
+                root = volcano::VolcanoIterator{
+                    volcano::PKeyScan{table->get_seq_file(), std::move(val)}
+                };
+
+                goto skip;
+            }
+        } else if (auto* index = table->get_index(stmt.filter->col_identifier)) {
+            if (const auto* eq_filter = std::get_if<parser::EqFilter>(&stmt.filter->data)) {
+                if (col_num == table->pkey_col_num()) {
+                    std::println("using pkey");
+                    auto val = lit2val(eq_filter->value, col.type);
+
+                    root = volcano::VolcanoIterator{
+                        volcano::PKeyScan{table->get_seq_file(), std::move(val)}
+                    };
+                } else if (auto* hash_index = std::get_if<HashIndex>(index)) {
+                    std::println("using eq hash");
+                    auto val = lit2val(eq_filter->value, col.type);
+                    auto hash_val = val_to_hash_val(val);
+                    auto cursor = hash_index->search(*hash_val);
+
+                    root = volcano::VolcanoIterator{
+                        volcano::IndexScan{table->get_seq_file(), std::move(cursor)}
+                    };
+                } else if (auto* btree_index = std::get_if<BTreeIndex>(index)) {
+                    std::println("using eq btree");
+                    auto val = lit2val(eq_filter->value, col.type);
+                    auto cursor = btree_index->search(val);
+
+                    root = volcano::VolcanoIterator{
+                        volcano::IndexScan{table->get_seq_file(), std::move(cursor)}
+                    };
+                } else {
+                    std::unreachable();
+                }
+
+                goto skip;
+            } else if (const auto* range_filter =
+                           std::get_if<parser::RangeFilter>(&stmt.filter->data)) {
+                if (auto* btree_index = std::get_if<BTreeIndex>(index)) {
+                    std::println("using btree range");
+
+                    auto low = lit2val(range_filter->min_val, col.type);
+                    auto high = lit2val(range_filter->max_val, col.type);
+
+                    auto& seq_file = table->get_seq_file();
+                    auto cursor = btree_index->range_search(low, high);
+
+                    root = volcano::VolcanoIterator{
+                        volcano::IndexScan{seq_file, std::move(cursor)}
+                    };
+                    goto skip;
+                }
+            }
+        }
+
         auto meta = table->get_meta();
+
         root = volcano::VolcanoIterator{
             volcano::Filter{std::move(root), *stmt.filter, std::move(meta)}
         };
     }
+skip:
 
     while (auto row = root.next())
         sink.on_row(*row);
 }
 
 void QueryExecutor::Executor::operator()(const parser::InsertStatement& stmt) const {
-    auto table = catalog.get_table(engine, stmt.table_name);
+    auto table = catalog.get_table(eng, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;
@@ -322,7 +428,7 @@ void QueryExecutor::Executor::operator()(const parser::InsertStatement& stmt) co
 // bool applies(const Row& row, parser::Filter filter);
 
 void QueryExecutor::Executor::operator()(const parser::DeleteStatement& stmt) const {
-    auto table = catalog.get_table(engine, stmt.table_name);
+    auto table = catalog.get_table(eng, stmt.table_name);
     if (!table) {
         std::println("table {} does not exist", stmt.table_name);
         return;

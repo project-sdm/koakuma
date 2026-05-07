@@ -632,8 +632,13 @@ void BTreeIndex::inner_merge_with_next(NodePage& par_page, u32 par_idx) {
 
 using RangeCursor = BTreeIndex::RangeCursor;
 
-RangeCursor::RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value key_high)
-    : buf_mgr{buf_mgr},
+RangeCursor::RangeCursor(BufferManager& buf_mgr,
+                         FileId fid,
+                         pnum_t init_page,
+                         u32 init_slot,
+                         Value key_high)
+    : fid{fid},
+      buf_mgr{buf_mgr},
       cur_pnum{init_page},
       cur_slot{init_slot},
       key_high{std::move(key_high)} {}
@@ -645,35 +650,30 @@ RangeCursor::RangeCursor(BufferManager& buf_mgr)
       finished{true} {}
 
 std::optional<Rid> RangeCursor::next() {
-    if (finished) {
+    if (cur_pnum == PAGE_NIL) {
         assert(!page);
         return std::nullopt;
     }
 
-    if (!page) {
-        if (cur_pnum == PAGE_NIL) {
-            finished = true;
-            return std::nullopt;
-        }
-
+    if (!page)
         page = NodePage{buf_mgr.fetch_page(fid, cur_pnum)};
-    }
 
     assert(cur_slot <= page->slot_cnt());
 
     if (cur_slot == page->slot_cnt()) {
         cur_slot = 0;
         cur_pnum = page->const_header_extra().next_page;
-        page = std::nullopt;
+        page.reset();
         return next();
     }
 
     Value key = page->read_data(cur_slot);
 
     if (key > key_high) {
-        finished = true;
-        page = std::nullopt;
-        return std::nullopt;
+        cur_slot = 0;
+        cur_pnum = PAGE_NIL;
+        page.reset();
+        return next();
     }
 
     Rid rid = page->read_slot_extra(cur_slot).rid;
@@ -697,14 +697,16 @@ RangeCursor BTreeIndex::range_search(const Value& key_low, const Value& key_high
         cur_page = fit_child;
     }
 
-    NodePage leaf_page{eng.buf_mgr.fetch_page(fid, cur_page)};
-
     u32 start_slot = 0;
 
-    for (; start_slot < leaf_page.slot_cnt(); ++start_slot) {
-        if (leaf_page.read_data(start_slot) >= key_low)
-            break;
+    {
+        NodePage leaf_page{eng.buf_mgr.fetch_page(fid, cur_page)};
+
+        for (; start_slot < leaf_page.slot_cnt(); ++start_slot) {
+            if (leaf_page.read_data(start_slot) >= key_low)
+                break;
+        }
     }
 
-    return RangeCursor{eng.buf_mgr, cur_page, start_slot, key_high};
+    return RangeCursor{eng.buf_mgr, fid, cur_page, start_slot, key_high};
 }

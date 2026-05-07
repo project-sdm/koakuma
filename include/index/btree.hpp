@@ -82,7 +82,11 @@ public:
         using value_type = Rid;
 
         explicit RangeCursor(BufferManager& buf_mgr);
-        RangeCursor(BufferManager& buf_mgr, pnum_t init_page, u32 init_slot, Value key_high);
+        RangeCursor(BufferManager& buf_mgr,
+                    FileId fid,
+                    pnum_t init_page,
+                    u32 init_slot,
+                    Value key_high);
 
         std::optional<value_type> next();
     };

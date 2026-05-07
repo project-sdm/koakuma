@@ -13,6 +13,8 @@
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
 #include "pack.hpp"
+#include "parser/ast.hpp"
+#include "parser/token.hpp"
 #include "types.hpp"
 #include "util.hpp"
 
@@ -38,6 +40,8 @@ enum class ColumnType : u8 {
     FLOAT,
     STRING,
 };
+
+Value lit2val(parser::ExprLit lit, ColumnType col_type);
 
 enum class IndexType : u8 {
     HASH,
@@ -194,6 +198,7 @@ public:
 
     [[nodiscard]] Meta read_meta();
 
+    [[nodiscard]] Row read_rid(Rid rid) const;
     std::optional<Rid> add(const Row& row);
     [[nodiscard]] std::optional<Row> search(const Value& pkey);
     [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
@@ -209,6 +214,9 @@ struct std::formatter<Value, char> {
     }
 
     static auto format(const Value& val, std::format_context& ctx) {
+        if (const auto* s = std::get_if<std::string>(&val))
+            return std::format_to(ctx.out(), "'{}'", *s);
+
         return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
     }
 };

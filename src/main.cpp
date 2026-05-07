@@ -53,13 +53,14 @@ int main() {
     std::println("{}", *res);
 
     Engine eng{};
-    QueryExecutor executor{eng};
+    {
+        QueryExecutor executor{eng};
 
-    catalog::Catalog catalog{util::getenv_or("KOAKUMA_DATA_PATH", "./.data")};
+        catalog::Catalog catalog{util::getenv_or("KOAKUMA_DATA_PATH", "./.data")};
 
-    PrintSink sink{};
-
-    executor.exec(catalog, *res, sink);
+        PrintSink sink{};
+        executor.exec(catalog, *res, sink);
+    }
 
     return 0;
 }

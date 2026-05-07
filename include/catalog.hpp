@@ -1,27 +1,41 @@
 #ifndef CATALOG_HPP
 #define CATALOG_HPP
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
+#include <variant>
 #include "engine/engine.hpp"
+#include "index/btree.hpp"
+#include "index/hash.hpp"
 #include "seq_file.hpp"
 
 namespace catalog {
+    using AnyIndex = std::variant<BTreeIndex, HashIndex>;
+
     class Table {
+    public:
+        explicit Table(SeqFile seq_file,
+                       SeqFile::Meta meta,
+                       std::unordered_map<std::string, std::size_t> col_nums,
+                       std::unordered_map<std::size_t, AnyIndex> col_indices);
+
+        const SeqFile::Meta& get_meta() const;
+        [[nodiscard]] std::size_t col_num(const std::string& col_name) const;
+        [[nodiscard]] std::size_t pkey_col_num() const;
+
+        std::optional<Rid> insert(const Row& row);
+        SeqFile::Cursor cursor();
+        AnyIndex* get_index(const std::string& col_name);
+
+        SeqFile& get_seq_file();
+
     private:
         SeqFile seq_file;
         SeqFile::Meta meta;
-        std::unordered_map<std::string, std::size_t> column_idx;
-
-    public:
-        explicit Table(SeqFile seq_file);
-
-        const SeqFile::Meta& get_meta() const;
-
-        std::optional<Rid> insert(const Row& row);
-
-        // coupled to seqfile for now (hopefully not for long)
-        SeqFile::Cursor cursor();
+        std::unordered_map<std::string, std::size_t> col_nums;
+        std::unordered_map<std::size_t, AnyIndex> col_indices;
     };
 
     class Catalog {

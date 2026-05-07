@@ -15,6 +15,8 @@
 
 using HashValue = std::variant<int, bool, std::string>;
 
+std::optional<HashValue> val_to_hash_val(Value val);
+
 // extendible hashing
 class HashIndex {
 private:
@@ -62,11 +64,11 @@ public:
 
     void init();
 
-    void add(const HashValue& pkey, Rid rid);
+    void add(const HashValue& key, Rid rid);
 
-    [[nodiscard]] Cursor search(const HashValue& pkey);
+    [[nodiscard]] Cursor search(const HashValue& key);
 
-    bool remove(const HashValue& pkey);
+    bool remove(const HashValue& key);
 
     void ugly_print() const;
 };

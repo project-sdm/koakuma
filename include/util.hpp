@@ -55,6 +55,9 @@ namespace util {
         { it.next() } -> std::same_as<std::optional<typename T::value_type>>;
     };
 
+    template<typename T, typename V>
+    concept iter_of = iter<T> && std::same_as<typename T::value_type, V>;
+
     template<iter Iter>
     class Peekable {
     private:

@@ -1,15 +1,47 @@
 #include "seq_file.hpp"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <print>
+#include <stdexcept>
 #include <utility>
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
 #include "util.hpp"
+
+Value lit2val(parser::ExprLit lit, ColumnType col_type) {
+    switch (col_type) {
+        case ColumnType::INT:
+            if (auto* x = std::get_if<f64>(&lit)) {
+                if (std::floor(*x) == *x)
+                    return static_cast<int>(*x);
+            }
+            break;
+        case ColumnType::FLOAT:
+            if (auto* x = std::get_if<f64>(&lit))
+                return *x;
+
+            break;
+        case ColumnType::STRING:
+            if (auto* s = std::get_if<std::string>(&lit))
+                return std::move(*s);
+
+            break;
+        case ColumnType::BOOL:
+            if (auto* b = std::get_if<bool>(&lit))
+                return *b;
+
+            break;
+        default: {
+        }
+    }
+
+    throw std::invalid_argument("unexpected type");
+}
 
 Rid::Rid(pnum_t pnum, u32 slot_idx)
     : pnum{pnum},
@@ -135,12 +167,15 @@ std::optional<Rid> SeqFile::find_rid_by_pkey_in_all_pages(const Value& pkey) {
 
 std::optional<Row> SeqFile::search(const Value& pkey) {
     auto rid = TRY_OPT(find_rid_by_pkey_in_all_pages(pkey));
+    return read_rid(rid);
+}
 
+Row SeqFile::read_rid(Rid rid) const {
     SeqPage page{eng.buf_mgr.fetch_page(fid, rid.pnum)};
     auto extra = page.read_slot_extra(rid.slot_idx);
 
     if (!extra.active)
-        return std::nullopt;
+        throw std::invalid_argument("slot is inactive");
 
     return page.read_data(rid.slot_idx);
 }
@@ -160,6 +195,7 @@ std::optional<Rid> SeqFile::add(const Row& row) {
 }
 
 void SeqFile::rebuild(SeqHeader& file_hdr) {
+    assert(false);
     std::vector<Row> aux_rows;
 
     {

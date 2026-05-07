@@ -41,7 +41,7 @@ public:
 
 class BufferManager {
 private:
-    static constexpr std::size_t NUM_FRAMES = 8;
+    static constexpr std::size_t NUM_FRAMES = 32;
 
     struct Frame {
         std::size_t num;

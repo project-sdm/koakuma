@@ -1,6 +1,7 @@
 #ifndef AST_HPP
 #define AST_HPP
 
+#include <cstddef>
 #include <format>
 #include <optional>
 #include <string>
@@ -26,8 +27,10 @@ namespace parser {
         Column(std::string name, DataType type);
     };
 
+    using ExprLit = std::variant<std::string, f64, bool>;
+
     struct EqFilter {
-        std::variant<std::string, f64, bool> value;
+        ExprLit value;
     };
 
     struct RangeFilter {
@@ -224,19 +227,19 @@ struct std::formatter<parser::Constraint, char> {
     }
 };
 
-template<typename T>
-struct std::formatter<std::optional<T>, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(const std::optional<T>& opt, std::format_context& ctx) {
-        if (!opt)
-            return std::format_to(ctx.out(), "nullopt");
-
-        return std::format_to(ctx.out(), "{}", *opt);
-    }
-};
+// template<typename T>
+// struct std::formatter<std::optional<T>, char> {
+//     static constexpr auto parse(std::format_parse_context& ctx) {
+//         return ctx.begin();
+//     }
+//
+//     static auto format(const std::optional<T>& opt, std::format_context& ctx) {
+//         if (!opt)
+//             return std::format_to(ctx.out(), "nullopt");
+//
+//         return std::format_to(ctx.out(), "{}", *opt);
+//     }
+// };
 
 template<>
 struct std::formatter<parser::Column, char> {
@@ -245,8 +248,11 @@ struct std::formatter<parser::Column, char> {
     }
 
     static auto format(const parser::Column& col, std::format_context& ctx) {
+        if (!col.constraint)
+            return std::format_to(ctx.out(), "Column: {} - {}", col.name, col.type);
+
         return std::format_to(ctx.out(), "Column: {} - {} - CONSTRAINT: {}", col.name, col.type,
-                              col.constraint);
+                              *col.constraint);
     }
 };
 

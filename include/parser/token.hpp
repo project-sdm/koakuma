@@ -76,13 +76,10 @@ enum class Symbol : u8 {
 };
 
 enum class DataType : u8 {
-    Bool,
-    Date,
-    Int,
-    Real,
-    Text,
-    Uuid,
-    Varchar,
+    INT,
+    REAL,
+    BOOL,
+    VARCHAR,
 };
 
 struct Number {

@@ -1,8 +1,9 @@
 #include "catalog.hpp"
 #include <cstddef>
 #include <filesystem>
-#include <print>
+#include <ranges>
 #include <utility>
+#include <variant>
 #include "engine/file_manager.hpp"
 #include "index/btree.hpp"
 #include "index/hash.hpp"
@@ -11,21 +12,55 @@
 
 using Table = catalog::Table;
 
-Table::Table(SeqFile seq_file)
+Table::Table(SeqFile seq_file,
+             SeqFile::Meta meta,
+             std::unordered_map<std::string, std::size_t> col_nums,
+             std::unordered_map<std::size_t, AnyIndex> col_indices)
     : seq_file{seq_file},
-      meta{seq_file.read_meta()} {
-    const auto& cols = meta.columns;
-
-    for (std::size_t i = 0; i < cols.size(); ++i)
-        column_idx[cols[i].name] = i;
-}
+      meta{std::move(meta)},
+      col_nums{std::move(col_nums)},
+      col_indices{std::move(col_indices)} {}
 
 const SeqFile::Meta& Table::get_meta() const {
     return meta;
 }
 
+SeqFile& Table::get_seq_file() {
+    return seq_file;
+}
+
+std::size_t Table::col_num(const std::string& col_name) const {
+    return col_nums.at(col_name);
+}
+
+std::size_t Table::pkey_col_num() const {
+    return meta.pkey_col;
+}
+
+catalog::AnyIndex* Table::get_index(const std::string& col_name) {
+    auto num = col_nums.at(col_name);
+    auto it = col_indices.find(num);
+
+    if (it == col_indices.end())
+        return nullptr;
+
+    return &it->second;
+}
+
 std::optional<Rid> Table::insert(const Row& row) {
-    return seq_file.add(row);
+    // TODO: rebuild indices on seq_file rebuild
+    Rid rid = TRY_OPT(seq_file.add(row));
+
+    for (auto& [col_idx, index] : col_indices) {
+        if (auto* hash = std::get_if<HashIndex>(&index))
+            hash->add(*val_to_hash_val(row[col_idx]), rid);
+        else if (auto* btree = std::get_if<BTreeIndex>(&index))
+            btree->add(row[col_idx], rid);
+        else
+            std::unreachable();
+    }
+
+    return rid;
 }
 
 SeqFile::Cursor Table::cursor() {
@@ -83,10 +118,36 @@ namespace catalog {
         return true;
     }
 
-    std::optional<Table> Catalog::get_table(Engine& eng, const std::string& name) const {
-        FileId fid = TRY_OPT(eng.file_mgr.open(table_path(name)));
+    std::optional<Table> Catalog::get_table(Engine& eng, const std::string& table_name) const {
+        FileId fid = TRY_OPT(eng.file_mgr.open(table_path(table_name)));
         SeqFile seq_file{eng, fid};
-        return Table{seq_file};
+
+        auto meta = seq_file.read_meta();
+        const auto& cols = meta.columns;
+
+        std::unordered_map<std::string, std::size_t> col_nums;
+        std::unordered_map<std::size_t, AnyIndex> col_indices;
+
+        for (const auto&& [i, col] : std::views::enumerate(cols)) {
+            col_nums[col.name] = i;
+
+            if (col.index) {
+                FileId fid = TRY_OPT(eng.file_mgr.open(index_path(table_name, col.name)));
+
+                switch (*col.index) {
+                    case IndexType::HASH:
+                        col_indices.emplace(i, HashIndex{eng, fid});
+                        break;
+                    case IndexType::BTREE:
+                        col_indices.emplace(i, BTreeIndex{eng, fid});
+                        break;
+                    default:
+                        std::unreachable();
+                }
+            }
+        }
+
+        return Table{seq_file, std::move(meta), std::move(col_nums), std::move(col_indices)};
     }
 
 }  // namespace catalog

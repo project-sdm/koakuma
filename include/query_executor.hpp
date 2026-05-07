@@ -20,7 +20,7 @@ public:
 
 private:
     struct Executor {
-        Engine& engine;
+        Engine& eng;
         const catalog::Catalog& catalog;
         RowSink& sink;
 
