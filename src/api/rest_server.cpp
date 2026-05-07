@@ -1,321 +1,172 @@
 #include "api/rest_server.hpp"
-#include <atomic>
-#include <cctype>
 #include <chrono>
-#include <cstdio>
 #include <format>
 #include <print>
 #include <string>
-#include <string_view>
-#include <type_traits>
-#include <utility>
+#include <variant>
+#include <vector>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
 #include "httplib/httplib.h"
+#include "json/json.hpp"
+#include "parser/ast.hpp"
 #include "parser/parser.hpp"
 #include "query_executor.hpp"
+#include "seq_file.hpp"
+
+using nlohmann::json;
+
+namespace parser {
+    void to_json(json& j, const Point2D& pt) {  // NOLINT(misc-use-internal-linkage)
+        j = json{
+            {"x", pt.x},
+            {"y", pt.y},
+        };
+    }
+}
+
+namespace std {
+
+    // serialize std::variant as whatever its active value is
+    template<typename... Types>
+    void to_json(json& j, const variant<Types...>& var) {  // NOLINT(misc-use-internal-linkage)
+        std::visit([&](const auto& val) { j = val; }, var);
+    }
+
+}  // namespace std
+
+void to_json(json& j, const Column& col) {  // NOLINT(misc-use-internal-linkage)
+    j = json{
+        {"name", col.name},
+        {"type", col.type},
+    };
+}
+
+struct QueryResult {
+    std::vector<Column> columns;
+    std::vector<Row> rows;
+};
+
+void to_json(json& j,  // NOLINT(misc-use-internal-linkage)
+             const QueryResult& result) {
+    j = json{
+        {"columns", result.columns},
+        {   "rows",    result.rows},
+    };
+}
 
 namespace {
 
-    constexpr u16 HTTP_OK = 200;
-    constexpr u16 HTTP_BAD_REQUEST = 400;
-    constexpr u16 HTTP_INTERNAL_SERVER_ERROR = 500;
-    constexpr std::string_view ERROR_CODE_VALIDATION = "VALIDATION_ERROR";
-    constexpr std::string_view ERROR_CODE_PARSE = "PARSE_ERROR";
-    constexpr std::string_view ERROR_CODE_EXECUTION = "EXECUTION_ERROR";
-    constexpr std::string_view MESSAGE_EMPTY_QUERY =
-        "empty query: send SQL in request body or sql parameter";
-    constexpr std::string_view MESSAGE_QUERY_PARSE_FAILED = "query parse failed";
-    constexpr std::string_view MESSAGE_QUERY_EXECUTION_FAILED = "query execution failed";
-
-    std::string json_escape(std::string_view input);
-
-    std::string column_type_to_json(ColumnType type) {
-        switch (type) {
-            case ColumnType::INT:
-                return "\"int\"";
-            case ColumnType::BOOL:
-                return "\"bool\"";
-            case ColumnType::FLOAT:
-                return "\"float\"";
-            case ColumnType::STRING:
-                return "\"string\"";
-            default:
-                std::unreachable();
-        }
-    }
-
-    std::atomic<u64> g_request_counter = 0;
-
-    u32 next_request_id() {
-        return 1U + g_request_counter.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    std::string json_escape(std::string_view input) {
-        std::string out;
-        out.reserve(input.size());
-
-        for (const char c : input) {
-            switch (c) {
-                case '\\':
-                    out += "\\\\";
-                    break;
-                case '"':
-                    out += "\\\"";
-                    break;
-                case '\n':
-                    out += "\\n";
-                    break;
-                case '\r':
-                    out += "\\r";
-                    break;
-                case '\t':
-                    out += "\\t";
-                    break;
-                default:
-                    out.push_back(c);
-                    break;
-            }
-        }
-
-        return out;
-    }
-
-    std::string value_to_json(const Value& value) {
-        return std::visit(
-            [](const auto& v) -> std::string {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, std::string>) {
-                    return std::format("\"{}\"", json_escape(v));
-                } else if constexpr (std::is_same_v<T, bool>) {
-                    return v ? "true" : "false";
-                } else {
-                    return std::format("{}", v);
-                }
-            },
-            value);
-    }
-
-    std::string row_to_json(const Row& row) {
-        std::string out = "[";
-        for (std::size_t i = 0; i < row.size(); ++i) {
-            if (i > 0)
-                out += ',';
-            out += value_to_json(row[i]);
-        }
-        out += ']';
-        return out;
-    }
-
-    std::string make_success_json(u32 request_id, std::string_view data_json) {
-        return std::format(R"({{"status":"success","requestId":"req-{}","data":{}}})", request_id,
-                           data_json);
-    }
-
-    std::string make_error_json(u32 request_id,
-                                std::string_view code,
-                                std::string_view message,
-                                std::string_view detail = {}) {
-        if (detail.empty()) {
-            return std::format(
-                "{{\"status\":\"error\",\"requestId\":\"req-{}\",\"error\":{{\"code\":\"{}\","
-                "\"message\":\"{}\"}}}}",
-                request_id, json_escape(code), json_escape(message));
-        }
-
-        return std::format(
-            "{{\"status\":\"error\",\"requestId\":\"req-{}\",\"error\":{{\"code\":\"{}\","
-            "\"message\":\"{}\",\"detail\":\"{}\"}}}}",
-            request_id, json_escape(code), json_escape(message), json_escape(detail));
-    }
-
-    void respond_json(httplib::Response& res, int status_code, const std::string& body) {
-        res.status = status_code;
-        res.set_content(body, "application/json");
-    }
-
-    std::string strip_trailing_whitespace(std::string value) {
-        while (!value.empty() && std::isspace(value.back()) != 0)
-            value.pop_back();
-
-        return value;
-    }
-
-    std::string read_query_from_request(const httplib::Request& req) {
-        if (!req.body.empty())
-            return strip_trailing_whitespace(req.body);
-
-        if (req.has_param("sql"))
-            return strip_trailing_whitespace(req.get_param_value("sql"));
-
-        if (req.has_param("query"))
-            return strip_trailing_whitespace(req.get_param_value("query"));
-
-        return {};
-    }
-
-    class JsonRowSink final : public QueryExecutor::RowSink {
+    class AccumulatorSink : public QueryExecutor::RowSink {
     public:
-        JsonRowSink(std::string& columns_json,
-                    std::string& rows_json,
-                    bool& first_column,
-                    bool& first_row)
-            : columns_json{columns_json},
-              rows_json{rows_json},
-              first_column{first_column},
-              first_row{first_row} {}
-
         void on_columns(const std::vector<Column>& columns) override {
-            columns_json = "[";
-            rows_json = "[";
-            first_column = true;
-            first_row = true;
-
-            for (const auto& column : columns) {
-                if (!first_column)
-                    columns_json += ',';
-
-                columns_json +=
-                    std::format(R"({{"name":"{}","type":{}}})", json_escape(column.name),
-                                column_type_to_json(column.type));
-                first_column = false;
-            }
+            results.emplace_back(columns);
         }
 
         void on_row(const Row& row) override {
-            if (!first_row)
-                rows_json += ',';
-            rows_json += row_to_json(row);
-            first_row = false;
+            results.back().rows.push_back(row);
         }
 
+        [[nodiscard]] const std::vector<QueryResult>& get_results() const {
+            return results;
+        }
+
+        ~AccumulatorSink() override = default;
+
     private:
-        std::string& columns_json;
-        std::string& rows_json;
-        bool& first_column;
-        bool& first_row;
+        std::vector<QueryResult> results;
     };
 
 }  // namespace
 
 namespace api {
 
-    struct RestServer::Impl {
-        explicit Impl(ServerConfig cfg)
-            : config{std::move(cfg)},
-              executor{eng},
-              catalog{cfg.data_path} {
-            setup_routes();
-        }
+    void RestServer::setup_routes() {
+        server.Post("/", [](const httplib::Request&, httplib::Response& res) {
+            res.set_header("Access-Control-Allow-Origin", "*");
 
-        void setup_routes() {
-            server.Post("/", [](const httplib::Request&, httplib::Response& res) {
-                respond_json(res, HTTP_OK, R"({"message":"Hello, world!"})");
-            });
+            json j = {
+                {"message", "Hello, world!"}
+            };
 
-            server.Post("/query", [this](const httplib::Request& req, httplib::Response& res) {
-                handle_query(req, res);
-            });
-        }
+            res.set_content(j.dump(), "application/json");
+        });
 
-        void handle_query(const httplib::Request& req, httplib::Response& res) {
-            auto request_id = next_request_id();
-            auto sql = read_query_from_request(req);
-
-            if (sql.empty()) {
-                respond_json(
-                    res, HTTP_BAD_REQUEST,
-                    make_error_json(request_id, ERROR_CODE_VALIDATION, MESSAGE_EMPTY_QUERY));
-                return;
-            }
-
-            using clock = std::chrono::steady_clock;
-            const auto parse_start = clock::now();
-
-            parser::Parser parser{std::move(sql)};
-            auto parsed = parser.source_file();
-            const auto parse_end = clock::now();
-
-            const auto parse_ms = static_cast<u32>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(parse_end - parse_start)
-                    .count());
-
-            if (!parsed) {
-                respond_json(
-                    res, HTTP_BAD_REQUEST,
-                    make_error_json(request_id, ERROR_CODE_PARSE, MESSAGE_QUERY_PARSE_FAILED,
-                                    std::format("{}", parsed.error())));
-                return;
-            }
-
-            const auto exec_start = clock::now();
-            std::string columns_json = "[";
-            std::string rows_json = "[";
-            bool first_column = true;
-            bool first_row = true;
-            u32 accepted_statements = 0;
-            const u64 reads_before = eng.file_mgr.get_read_counter();
-            const u64 writes_before = eng.file_mgr.get_write_counter();
-
-            JsonRowSink sink{columns_json, rows_json, first_column, first_row};
-
-            auto exec_res = executor.exec(catalog, *parsed, sink);
-
-            if (!exec_res) {
-                respond_json(res, HTTP_INTERNAL_SERVER_ERROR,
-                             make_error_json(request_id, ERROR_CODE_EXECUTION,
-                                             MESSAGE_QUERY_EXECUTION_FAILED,
-                                             std::format("{}", exec_res.error())));
-                return;
-            }
-
-            const auto exec_end = clock::now();
-
-            const auto exec_ms = static_cast<u32>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start)
-                    .count());
-
-            const u64 disk_reads = eng.file_mgr.get_read_counter() - reads_before;
-            const u64 disk_writes = eng.file_mgr.get_write_counter() - writes_before;
-
-            columns_json += "]";
-            rows_json += "]";
-            std::string data = std::format(
-                "{{\"acceptedStatements\":{},\"timingMs\":{{\"parse\":{},\"exec\":{}}},\"diskIO\":{"
-                "{\"reads\":{},\"writes\":{}}},\"columns\":{},\"rows\":{}}}",
-                accepted_statements, parse_ms, exec_ms, disk_reads, disk_writes, columns_json,
-                rows_json);
-            respond_json(res, HTTP_OK, make_success_json(request_id, data));
-        }
-
-        int run() {
-            std::println("Server listening on {}:{}", config.host, config.port);
-
-            if (!server.listen(config.host, config.port)) {
-                std::println(stderr, "Failed to bind server to {}:{}", config.host, config.port);
-                return 1;
-            }
-
-            return 0;
-        }
-
-        ServerConfig config;
-        Engine eng;
-        QueryExecutor executor;
-        catalog::Catalog catalog;
-        httplib::Server server;
-    };
-
-    RestServer::RestServer(ServerConfig config)
-        : impl{std::make_unique<Impl>(std::move(config))} {}
-
-    int RestServer::run() {
-        return impl->run();
+        server.Post("/query", [this](const httplib::Request& req, httplib::Response& res) {
+            res.set_header("Access-Control-Allow-Origin", "*");
+            handle_query(req, res);
+        });
     }
 
-    int run_rest_server(const ServerConfig& config) {
-        RestServer server{config};
-        return server.run();
+    void RestServer::handle_query(const httplib::Request& req, httplib::Response& res) {
+        using clock = std::chrono::steady_clock;
+
+        using httplib::StatusCode;
+
+        parser::Parser parser{req.body};
+        auto parsed = parser.source_file();
+
+        if (!parsed) {
+            res.status = StatusCode::BadRequest_400;
+            // TODO: use std::format(parsed.error())
+            json j = {
+                {"detail", "Syntax error"}
+            };
+            res.set_content(j.dump(), "application/json");
+            return;
+        }
+
+        u64 reads_before = eng.file_mgr.get_read_counter();
+        u64 writes_before = eng.file_mgr.get_write_counter();
+
+        AccumulatorSink sink{};
+
+        auto exec_start = clock::now();
+        auto exec_res = executor.exec(catalog, *parsed, sink);
+        auto exec_end = clock::now();
+
+        if (!exec_res) {
+            res.status = StatusCode::InternalServerError_500;
+
+            json j = {
+                {"detail", std::format("{}", exec_res.error())}
+            };
+            res.set_content(j.dump(), "application/json");
+            return;
+        }
+
+        auto time_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start).count();
+
+        u64 disk_reads = eng.file_mgr.get_read_counter() - reads_before;
+        u64 disk_writes = eng.file_mgr.get_write_counter() - writes_before;
+
+        json j = {
+            {"results", sink.get_results()},
+            {"time_ms",            time_ms},
+            {  "reads",         disk_reads},
+            { "writes",        disk_writes},
+        };
+
+        res.set_content(j.dump(), "application/json");
+    }
+
+    RestServer::RestServer(const ServerConfig& cfg)
+        : config{cfg},
+          executor{eng},
+          catalog{cfg.data_path} {
+        setup_routes();
+    }
+
+    int RestServer::run() {
+        std::println("Server listening on {}:{}", config.host, config.port);
+
+        if (!server.listen(config.host, config.port)) {
+            std::println(stderr, "Failed to bind server to {}:{}", config.host, config.port);
+            return 1;
+        }
+
+        return 0;
     }
 
 }  // namespace api

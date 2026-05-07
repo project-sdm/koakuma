@@ -36,9 +36,9 @@ using Row = std::vector<Value>;
 enum class ColumnType : u8 {
     INT,
     BOOL,
-    FLOAT,
-    STRING,
-    POINT,
+    REAL,
+    VARCHAR,
+    POINT2D,
 };
 
 enum class IndexType : u8 {

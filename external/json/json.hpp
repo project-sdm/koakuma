@@ -4325,7 +4325,7 @@ template<typename OfType, typename T,
          typename = detail::enable_if_t<all_integral<OfType, T>::value>>
 struct value_in_range_of_impl1;
 
-template<typename OfType, typename T>
+template<typename OfType, typename T>
 struct value_in_range_of_impl1<OfType, T, false>
 {
     static constexpr bool test(T val)
@@ -25421,7 +25421,7 @@ class basic_json // NOLINT(cppcoreguidelines-special-member-functions,hicpp-spec
                     if (source.find(it.key()) == source.end())
                     {
                         // found a key that is not in this -> add it
-                        const auto path_keygg = detail::concat<string_t>(path, '/', detail::escape(it.key()));
+                        const auto path_key = detail::concat<string_t>(path, '/', detail::escape(it.key()));
                         result.push_back(
                         {
                             {"op", "add"}, {"path", path_key},

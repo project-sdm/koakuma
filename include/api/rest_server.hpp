@@ -1,62 +1,43 @@
 #ifndef API_REST_SERVER_HPP
 #define API_REST_SERVER_HPP
 
-#include <memory>
+#include <filesystem>
 #include <string>
-#include <string_view>
-
+#include "catalog.hpp"
+#include "engine/engine.hpp"
+#include "httplib/httplib.h"
+#include "query_executor.hpp"
 #include "types.hpp"
 
 namespace api {
 
-    enum class ErrorCode : u8 {
-        ValidationError,
-        ParseError,
-        ExecutionError,
-        InternalError,
-    };
-
     struct ServerConfig {
         std::string host;
         u16 port;
-        std::string data_path;
+        std::filesystem::path data_path;
     };
 
-    struct ResponseTiming {
-        u32 parse_ms = 0;
-        u32 exec_ms = 0;
-    };
-
-    struct ResponseError {
-        ErrorCode code = ErrorCode::InternalError;
-        std::string message;
-        std::string detail;
-    };
-
-    struct ResponseData {
-        u32 accepted_statements = 0;
-        ResponseTiming timing;
-    };
-
-    struct ApiResponse {
-        bool ok = false;
-        u32 request_id = 0;
-        std::string_view data_json;
-        ResponseError error;
+    struct QueryResult {
+        std::vector<Column> columns;
+        std::vector<Row> rows;
     };
 
     class RestServer {
     public:
-        explicit RestServer(ServerConfig config = {});
+        explicit RestServer(const ServerConfig& cfg = {});
 
         [[nodiscard]] int run();
 
     private:
-        struct Impl;
-        std::unique_ptr<Impl> impl;
-    };
+        ServerConfig config;
+        Engine eng;
+        QueryExecutor executor;
+        catalog::Catalog catalog;
+        httplib::Server server;
 
-    int run_rest_server(const ServerConfig& config = {});
+        void setup_routes();
+        void handle_query(const httplib::Request& req, httplib::Response& res);
+    };
 
 }  // namespace api
 

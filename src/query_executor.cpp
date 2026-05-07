@@ -45,12 +45,12 @@ namespace {
                         return static_cast<int>(*x);
                 }
                 break;
-            case ColumnType::FLOAT:
+            case ColumnType::REAL:
                 if (auto* x = std::get_if<f64>(&lit))
                     return *x;
 
                 break;
-            case ColumnType::STRING:
+            case ColumnType::VARCHAR:
                 if (auto* s = std::get_if<std::string>(&lit))
                     return std::move(*s);
 
@@ -252,13 +252,13 @@ namespace {
             case DataType::BOOL:
                 return ColumnType::BOOL;
             case DataType::VARCHAR:
-                return ColumnType::STRING;
+                return ColumnType::VARCHAR;
             case DataType::INT:
                 return ColumnType::INT;
             case DataType::REAL:
-                return ColumnType::FLOAT;
+                return ColumnType::REAL;
             case DataType::POINT2D:
-                return ColumnType::POINT;
+                return ColumnType::POINT2D;
         }
 
         std::unreachable();
@@ -365,15 +365,15 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
 
                                    try {
                                        switch (col.type) {
-                                           case ColumnType::STRING:
+                                           case ColumnType::VARCHAR:
                                                return doc.GetCell<std::string>(j, i);
                                            case ColumnType::INT:
                                                return doc.GetCell<int>(j, i);
-                                           case ColumnType::FLOAT:
+                                           case ColumnType::REAL:
                                                return doc.GetCell<double>(j, i);
                                            case ColumnType::BOOL:
                                                return doc.GetCell<bool>(j, i);
-                                           case ColumnType::POINT:
+                                           case ColumnType::POINT2D:
                                                return doc.GetCell<parser::Point2D>(j, i);
                                        }
 
