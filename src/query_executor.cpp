@@ -272,9 +272,8 @@ void QueryExecutor::Executor::operator()(const parser::CreateStatement& stmt) co
                                   return doc.GetCell<double>(j, i);
                               case ColumnType::BOOL:
                                   return doc.GetCell<bool>(j, i);
-                              default:
-                                  std::unreachable();
                           }
+                          std::unreachable();
                       }) |
                       std::ranges::to<Row>();
 
