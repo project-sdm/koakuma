@@ -501,10 +501,8 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
 std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     const parser::InsertStatement& stmt) const {
     auto table = catalog.get_table(eng, stmt.table_name);
-    if (!table) {
-        std::println("table {} does not exist", stmt.table_name);
-        return {};
-    }
+    if (!table)
+        return std::unexpected{TableNotFound{stmt.table_name}};
 
     for (const auto& value : stmt.values) {
         Row row = map_exprs(value.exprs);

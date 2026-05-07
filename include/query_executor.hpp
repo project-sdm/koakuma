@@ -89,8 +89,8 @@ struct std::formatter<UnexpectedType, char> {
     }
 
     static auto format(const UnexpectedType& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "could not convert literal {} to {}", err.lit,
-                              magic_enum::enum_name<>(err.expected_type));
+        return std::format_to(ctx.out(), "Could not cast {} as {}", err.lit,
+                              magic_enum::enum_name(err.expected_type));
     }
 };
 
@@ -101,7 +101,7 @@ struct std::formatter<TableNotFound, char> {
     }
 
     static auto format(const TableNotFound& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "table {} does not exist", err.table_name);
+        return std::format_to(ctx.out(), "Table '{}' does not exist", err.table_name);
     }
 };
 
@@ -112,7 +112,7 @@ struct std::formatter<TableAlreadyExists, char> {
     }
 
     static auto format(const TableAlreadyExists& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "table {} already exists", err.table_name);
+        return std::format_to(ctx.out(), "Table {} already exists", err.table_name);
     }
 };
 
@@ -123,7 +123,7 @@ struct std::formatter<InvalidCsvCell, char> {
     }
 
     static auto format(const InvalidCsvCell& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "csv cell `{}` is invalid for type {}", err.text,
+        return std::format_to(ctx.out(), "Could not parse CSV cell `{}` as {}", err.text,
                               magic_enum::enum_name(err.expected_type));
     }
 };

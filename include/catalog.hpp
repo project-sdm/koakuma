@@ -98,7 +98,7 @@ struct std::formatter<catalog::DuplicatePrimaryKey, char> {
     }
 
     static auto format(const catalog::DuplicatePrimaryKey& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "duplicate primary key: {}", err.pkey);
+        return std::format_to(ctx.out(), "Puplicate primary key: {}", err.pkey);
     }
 };
 

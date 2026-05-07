@@ -9,6 +9,7 @@
 #include "engine/engine.hpp"
 #include "httplib/httplib.h"
 #include "json/json.hpp"
+#include "magic_enum/magic_enum.hpp"
 #include "parser/ast.hpp"
 #include "parser/parser.hpp"
 #include "query_executor.hpp"
@@ -37,8 +38,8 @@ namespace std {
 
 void to_json(json& j, const Column& col) {  // NOLINT(misc-use-internal-linkage)
     j = json{
-        {"name", col.name},
-        {"type", col.type},
+        {"name",                        col.name},
+        {"type", magic_enum::enum_name(col.type)},
     };
 }
 
@@ -107,10 +108,10 @@ namespace api {
         auto parsed = parser.source_file();
 
         if (!parsed) {
+            // TODO: use
             res.status = StatusCode::BadRequest_400;
-            // TODO: use std::format(parsed.error())
             json j = {
-                {"detail", "Syntax error"}
+                {"detail", std::format("{}", parsed.error())}
             };
             res.set_content(j.dump(), "application/json");
             return;
