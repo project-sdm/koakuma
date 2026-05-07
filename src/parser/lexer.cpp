@@ -135,6 +135,8 @@ namespace {
         out[0][';'] = 14;
         out[0]['-'] = 15;
 
+        add_digit(15, 16);
+
         out[3]['*'] = MULTI_COMMENT_STATE;
         for (std::size_t i = 0; i < 256; ++i) {
             auto c = static_cast<unsigned char>(i);
