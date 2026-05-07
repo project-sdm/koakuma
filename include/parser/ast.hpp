@@ -1,13 +1,13 @@
 #ifndef AST_HPP
 #define AST_HPP
 
-#include <cstddef>
 #include <format>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 #include "token.hpp"
+#include "types.hpp"
 
 namespace parser {
 
@@ -27,24 +27,31 @@ namespace parser {
         Column(std::string name, DataType type);
     };
 
-    using ExprLit = std::variant<std::string, f64, bool>;
+    struct Point2D {
+        f64 x = 0;
+        f64 y = 0;
+
+        Point2D();
+        Point2D(f64 x, f64 y);
+
+        bool operator==(const Point2D& other) const;
+        bool operator<(const Point2D& other) const;
+        bool operator<=(const Point2D& other) const;
+        bool operator>(const Point2D& other) const;
+        bool operator>=(const Point2D& other) const;
+    };
+
+    using ExprLit = std::variant<std::string, f64, bool, Point2D>;
 
     struct EqFilter {
         ExprLit value;
     };
 
     struct RangeFilter {
-        f64 min_val;
-        f64 max_val;
+        ExprLit low;
+        ExprLit high;
 
-        RangeFilter(f64 min_val, f64 max_val);
-    };
-
-    struct Point2D {
-        f64 x;
-        f64 y;
-
-        Point2D(f64 x, f64 y);
+        RangeFilter(ExprLit low, ExprLit high);
     };
 
     struct RadFilter {
@@ -64,7 +71,7 @@ namespace parser {
     using FilterData = std::variant<EqFilter, RangeFilter, RadFilter, KFilter>;
 
     struct Filter {
-        std::string col_identifier;
+        std::string col_name;
         FilterData data;
     };
 
@@ -78,6 +85,7 @@ namespace parser {
         std::string table_name;
         std::vector<Column> columns;
         std::optional<std::string> file_path = std::nullopt;
+        bool if_not_exists = false;
 
         explicit CreateStatement(std::string table_name);
     };
@@ -113,7 +121,7 @@ struct std::formatter<parser::Point2D, char> {
     }
 
     static auto format(const parser::Point2D& point, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Point2D({}, {})", point.x, point.y);
+        return std::format_to(ctx.out(), "({}, {})", point.x, point.y);
     }
 };
 
@@ -131,13 +139,27 @@ struct std::formatter<parser::EqFilter, char> {
 };
 
 template<>
+struct std::formatter<parser::ExprLit, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const parser::ExprLit& lit, std::format_context& ctx) {
+        if (const auto* s = std::get_if<std::string>(&lit))
+            return std::format_to(ctx.out(), "'{}'", *s);
+
+        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, lit);
+    }
+};
+
+template<>
 struct std::formatter<parser::RangeFilter, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
     static auto format(const parser::RangeFilter& filter, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "RangeFilter: {} - {}", filter.min_val, filter.max_val);
+        return std::format_to(ctx.out(), "RangeFilter: {} - {}", filter.low, filter.high);
     }
 };
 
@@ -173,7 +195,7 @@ struct std::formatter<parser::Filter, char> {
     static auto format(const parser::Filter& filter, std::format_context& ctx) {
         auto out = ctx.out();
 
-        out = std::format_to(out, "Filter: iden {} - ", filter.col_identifier);
+        out = std::format_to(out, "Filter: iden {} - ", filter.col_name);
         out =
             std::visit([&](auto&& value) { return std::format_to(out, "{}", value); }, filter.data);
 
@@ -226,20 +248,6 @@ struct std::formatter<parser::Constraint, char> {
                           constraint);
     }
 };
-
-// template<typename T>
-// struct std::formatter<std::optional<T>, char> {
-//     static constexpr auto parse(std::format_parse_context& ctx) {
-//         return ctx.begin();
-//     }
-//
-//     static auto format(const std::optional<T>& opt, std::format_context& ctx) {
-//         if (!opt)
-//             return std::format_to(ctx.out(), "nullopt");
-//
-//         return std::format_to(ctx.out(), "{}", *opt);
-//     }
-// };
 
 template<>
 struct std::formatter<parser::Column, char> {

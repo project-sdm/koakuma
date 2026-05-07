@@ -12,36 +12,6 @@
 #include "engine/file_manager.hpp"
 #include "util.hpp"
 
-Value lit2val(parser::ExprLit lit, ColumnType col_type) {
-    switch (col_type) {
-        case ColumnType::INT:
-            if (auto* x = std::get_if<f64>(&lit)) {
-                if (std::floor(*x) == *x)
-                    return static_cast<int>(*x);
-            }
-            break;
-        case ColumnType::FLOAT:
-            if (auto* x = std::get_if<f64>(&lit))
-                return *x;
-
-            break;
-        case ColumnType::STRING:
-            if (auto* s = std::get_if<std::string>(&lit))
-                return std::move(*s);
-
-            break;
-        case ColumnType::BOOL:
-            if (auto* b = std::get_if<bool>(&lit))
-                return *b;
-
-            break;
-        default: {
-        }
-    }
-
-    throw std::invalid_argument("unexpected type");
-}
-
 Rid::Rid(pnum_t pnum, u32 slot_idx)
     : pnum{pnum},
       slot_idx{slot_idx} {}
@@ -411,7 +381,10 @@ std::optional<RangeCursor::value_type> RangeCursor::next() {
         return std::nullopt;
 
     Row row = page().read_data(cur_slot);
+    Rid rid{cur_pnum, cur_slot};
+
     cur_slot += 1;
 
-    return row;
+    return std::make_pair(rid, row);
+    ;
 }

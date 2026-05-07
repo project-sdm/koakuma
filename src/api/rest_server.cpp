@@ -259,19 +259,16 @@ namespace api {
 
             JsonRowSink sink{columns_json, rows_json, first_column, first_row};
 
-            try {
-                accepted_statements = executor.exec(catalog, *parsed, sink);
-            } catch (const std::exception& ex) {
+            auto exec_res = executor.exec(catalog, *parsed, sink);
+
+            if (!exec_res) {
                 respond_json(res, HTTP_INTERNAL_SERVER_ERROR,
                              make_error_json(request_id, ERROR_CODE_EXECUTION,
-                                             MESSAGE_QUERY_EXECUTION_FAILED, ex.what()));
-                return;
-            } catch (...) {
-                respond_json(res, HTTP_INTERNAL_SERVER_ERROR,
-                             make_error_json(request_id, ERROR_CODE_EXECUTION,
-                                             MESSAGE_QUERY_EXECUTION_FAILED, "unknown exception"));
+                                             MESSAGE_QUERY_EXECUTION_FAILED,
+                                             std::format("{}", exec_res.error())));
                 return;
             }
+
             const auto exec_end = clock::now();
 
             const auto exec_ms = static_cast<u32>(

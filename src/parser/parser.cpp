@@ -43,10 +43,20 @@ namespace parser {
     std::expected<CreateStatement, CompileError> Parser::create_statement() {
         TRYV(expect_val<Keyword::Create>());
         TRYV(expect_val<Keyword::Table>());
+
+        bool if_not_exists = false;
+
+        if (TRY(accept_val<Keyword::If>())) {
+            TRYV(expect_val<Keyword::Not>());
+            TRYV(expect_val<Keyword::Exists>());
+            if_not_exists = true;
+        }
+
         auto tbl_name_tok = TRY(expect_var<Identifier>());
         TRYV(expect_val<Symbol::LParen>());
 
         CreateStatement stmt{tbl_name_tok.value};
+        stmt.if_not_exists = if_not_exists;
 
         do {
             auto tbl_tok = TRY(expect_var<Identifier>());
@@ -155,29 +165,17 @@ namespace parser {
         Filter filter;
 
         auto iden_tok = TRY(expect_var<Identifier>());
-        filter.col_identifier = iden_tok.value;
+        filter.col_name = iden_tok.value;
 
         if (TRY(accept_val<Symbol::Eq>())) {
-            EqFilter eqfilter;
-
-            if (auto tok = TRY(accept_var<Literal>()))
-                eqfilter.value = std::move(tok->value);
-            else if (auto tok = TRY(accept_var<Number>()))
-                eqfilter.value = tok->value;
-            else if (TRY(accept_val<Keyword::True>()))
-                eqfilter.value = true;
-            else if (TRY(accept_val<Keyword::False>()))
-                eqfilter.value = false;
-            else
-                return std::unexpected{ParseError::UnexpectedToken};
-
-            filter.data = std::move(eqfilter);
+            auto lit = TRY(expr_lit());
+            filter.data = EqFilter{std::move(lit)};
         } else if (TRY(accept_val<Keyword::Between>())) {
-            auto low_tok = TRY(expect_var<Number>());
+            auto low = TRY(expr_lit());
             TRYV(expect_val<Keyword::And>());
-            auto high_tok = TRY(expect_var<Number>());
+            auto high = TRY(expr_lit());
 
-            filter.data = RangeFilter{low_tok.value, high_tok.value};
+            filter.data = RangeFilter{std::move(low), std::move(high)};
         } else if (TRY(accept_val<Keyword::In>())) {
             TRYV(expect_val<Symbol::LParen>());
             TRYV(expect_val<Keyword::Point>());
@@ -207,4 +205,30 @@ namespace parser {
 
         return filter;
     }
+
+    std::expected<ExprLit, CompileError> Parser::expr_lit() {
+        if (auto tok = TRY(accept_var<Literal>()))
+            return tok->value;
+
+        if (auto tok = TRY(accept_var<Number>()))
+            return tok->value;
+
+        if (TRY(accept_val<Keyword::True>()))
+            return true;
+
+        if (TRY(accept_val<Keyword::False>()))
+            return false;
+
+        if (TRY(accept_val<Symbol::LParen>())) {
+            auto x_tok = TRY(expect_var<Number>());
+            TRYV(expect_val<Symbol::Comma>());
+            auto y_tok = TRY(expect_var<Number>());
+            TRYV(expect_val<Symbol::RParen>());
+
+            return Point2D(x_tok.value, y_tok.value);
+        }
+
+        return std::unexpected{ParseError::UnexpectedToken};
+    }
+
 }  // namespace parser

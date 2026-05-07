@@ -1,5 +1,6 @@
 #include "catalog.hpp"
 #include <cstddef>
+#include <expected>
 #include <filesystem>
 #include <ranges>
 #include <utility>
@@ -9,6 +10,9 @@
 #include "index/hash.hpp"
 #include "seq_file.hpp"
 #include "util.hpp"
+
+catalog::DuplicatePrimaryKey::DuplicatePrimaryKey(Value pkey)
+    : pkey{std::move(pkey)} {}
 
 using Table = catalog::Table;
 
@@ -47,20 +51,22 @@ catalog::AnyIndex* Table::get_index(const std::string& col_name) {
     return &it->second;
 }
 
-std::optional<Rid> Table::insert(const Row& row) {
+std::expected<Rid, catalog::InsertionError> Table::insert(const Row& row) {
     // TODO: rebuild indices on seq_file rebuild
-    Rid rid = TRY_OPT(seq_file.add(row));
+    auto rid = seq_file.add(row);
+    if (!rid)
+        return std::unexpected{catalog::DuplicatePrimaryKey{row.at(meta.pkey_col)}};
 
     for (auto& [col_idx, index] : col_indices) {
         if (auto* hash = std::get_if<HashIndex>(&index))
-            hash->add(*val_to_hash_val(row[col_idx]), rid);
+            hash->add(TRY(val_to_hash_val(row[col_idx])), *rid);
         else if (auto* btree = std::get_if<BTreeIndex>(&index))
-            btree->add(row[col_idx], rid);
+            btree->add(row[col_idx], *rid);
         else
             std::unreachable();
     }
 
-    return rid;
+    return *rid;
 }
 
 SeqFile::Cursor Table::cursor() {

@@ -1,9 +1,10 @@
-create table users (
-  id varchar primary key,
-  name varchar index hash,
-  age int index btree,
-  birth_date varchar,
-  married bool index hash
+create table if not exists users (
+    id varchar primary key,
+    name varchar index hash,
+    age int index btree,
+    birth_date varchar,
+    married bool index hash,
+    location point
 ) from file 'data/users.csv';
 
 -- insert into users values
@@ -16,6 +17,12 @@ create table users (
 
 select * from users;
 select * from users where age between 18 and 30;
+
+delete from users where age = 18;
+
+select * from users where age between 18 and 30;
+
 select * from users where married = true;
-select * from users where name = 'name_3';
+-- select * from users where name = 'name_3';
 select * from users where id = 'id_3';
+select * from users where id between 'id_1' and 'id_3';

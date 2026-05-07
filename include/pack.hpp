@@ -191,6 +191,7 @@ namespace pack {
     }
 
     template<typename T>
+        requires std::is_default_constructible_v<T>
     T unpack_alloc(const u8* src) {
         T val;
         unpack<>(val, src);

@@ -2,6 +2,7 @@
 #define CATALOG_HPP
 
 #include <cstddef>
+#include <expected>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,14 @@
 namespace catalog {
     using AnyIndex = std::variant<BTreeIndex, HashIndex>;
 
+    struct DuplicatePrimaryKey {
+        Value pkey;
+
+        explicit DuplicatePrimaryKey(Value pkey);
+    };
+
+    using InsertionError = std::variant<DuplicatePrimaryKey, ValueNotHashable>;
+
     class Table {
     public:
         explicit Table(SeqFile seq_file,
@@ -25,7 +34,8 @@ namespace catalog {
         [[nodiscard]] std::size_t col_num(const std::string& col_name) const;
         [[nodiscard]] std::size_t pkey_col_num() const;
 
-        std::optional<Rid> insert(const Row& row);
+        std::expected<Rid, InsertionError> insert(const Row& row);
+
         SeqFile::Cursor cursor();
         AnyIndex* get_index(const std::string& col_name);
 
@@ -80,5 +90,27 @@ namespace catalog {
     }
 
 }  // namespace catalog
+
+template<>
+struct std::formatter<catalog::DuplicatePrimaryKey, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const catalog::DuplicatePrimaryKey& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "duplicate primary key: {}", err.pkey);
+    }
+};
+
+template<>
+struct std::formatter<catalog::InsertionError, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const catalog::InsertionError& err, std::format_context& ctx) {
+        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, err);
+    }
+};
 
 #endif

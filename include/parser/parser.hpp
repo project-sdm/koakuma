@@ -36,6 +36,7 @@ namespace parser {
         std::expected<DeleteStatement, CompileError> delete_statement();
 
         std::expected<InsertValue, CompileError> insert_value();
+        std::expected<ExprLit, CompileError> expr_lit();
         std::expected<Filter, CompileError> where_declaration();
 
         util::Peekable<Lexer> tokens;

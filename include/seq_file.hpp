@@ -14,7 +14,6 @@
 #include "layout/slotted_page.hpp"
 #include "pack.hpp"
 #include "parser/ast.hpp"
-#include "parser/token.hpp"
 #include "types.hpp"
 #include "util.hpp"
 
@@ -31,7 +30,7 @@ struct Rid {
 
 static constexpr pnum_t PAGE_NIL = -1;
 
-using Value = std::variant<int, bool, f64, std::string>;
+using Value = std::variant<int, bool, f64, std::string, parser::Point2D>;
 using Row = std::vector<Value>;
 
 enum class ColumnType : u8 {
@@ -39,9 +38,8 @@ enum class ColumnType : u8 {
     BOOL,
     FLOAT,
     STRING,
+    POINT,
 };
-
-Value lit2val(parser::ExprLit lit, ColumnType col_type);
 
 enum class IndexType : u8 {
     HASH,
@@ -176,7 +174,7 @@ public:
         SeqPage& page();
 
     public:
-        using value_type = Row;
+        using value_type = std::pair<Rid, Row>;
 
         explicit RangeCursor(SeqFile& seq_file, Value pkey_low, Value pkey_high);
 

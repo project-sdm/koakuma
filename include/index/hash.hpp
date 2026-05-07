@@ -15,7 +15,13 @@
 
 using HashValue = std::variant<int, bool, std::string>;
 
-std::optional<HashValue> val_to_hash_val(Value val);
+struct ValueNotHashable {
+    Value val;
+
+    explicit ValueNotHashable(Value val);
+};
+
+std::expected<HashValue, ValueNotHashable> val_to_hash_val(Value val);
 
 // extendible hashing
 class HashIndex {
@@ -104,6 +110,17 @@ struct std::formatter<HashValue, char> {
 
     static auto format(const HashValue& val, std::format_context& ctx) {
         return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
+    }
+};
+
+template<>
+struct std::formatter<ValueNotHashable, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const ValueNotHashable& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "value {} is not hashable", err.val);
     }
 };
 

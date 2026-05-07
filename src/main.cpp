@@ -43,24 +43,25 @@ int main() {
     file.close();
 
     parser::Parser parser{source};
-    auto res = parser.source_file();
+    auto source_res = parser.source_file();
 
-    if (!res) {
-        std::println("{}", res.error());
+    if (!source_res) {
+        std::println("{}", source_res.error());
         return 1;
     }
 
-    std::println("{}", *res);
+    std::println("{}", *source_res);
 
     Engine eng{};
-    {
-        QueryExecutor executor{eng};
 
-        catalog::Catalog catalog{util::getenv_or("KOAKUMA_DATA_PATH", "./.data")};
+    QueryExecutor executor{eng};
 
-        PrintSink sink{};
-        executor.exec(catalog, *res, sink);
-    }
+    catalog::Catalog catalog{util::getenv_or("KOAKUMA_DATA_PATH", "./.data")};
+
+    PrintSink sink{};
+    auto res = executor.exec(catalog, *source_res, sink);
+    if (!res)
+        std::println("error: {}", res.error());
 
     return 0;
 }

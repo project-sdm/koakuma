@@ -4,7 +4,6 @@
 #include <functional>
 #include <optional>
 #include <print>
-#include <string>
 #include <utility>
 #include <variant>
 #include "engine/buffer_manager.hpp"
@@ -12,10 +11,10 @@
 #include "seq_file.hpp"
 #include "types.hpp"
 
-// largest depth such that the directory fits within the header page
-static constexpr u8 MAX_DEPTH = 8;
+ValueNotHashable::ValueNotHashable(Value val)
+    : val{std::move(val)} {}
 
-std::optional<HashValue> val_to_hash_val(Value val) {
+std::expected<HashValue, ValueNotHashable> val_to_hash_val(Value val) {
     if (auto* s = std::get_if<std::string>(&val))
         return HashValue{*s};
 
@@ -25,8 +24,11 @@ std::optional<HashValue> val_to_hash_val(Value val) {
     if (auto* b = std::get_if<bool>(&val))
         return HashValue{*b};
 
-    return std::nullopt;
+    return std::unexpected{ValueNotHashable{std::move(val)}};
 }
+
+// largest depth such that the directory fits within the header page
+static constexpr u8 MAX_DEPTH = 8;
 
 HashIndex::HashIndex(Engine& eng, FileId fid)
     : eng{eng},

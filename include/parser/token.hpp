@@ -11,6 +11,8 @@
 #include "types.hpp"
 
 enum class Keyword : u8 {
+    If,
+    Exists,
     All,
     // Analyze,
     And,
@@ -80,6 +82,7 @@ enum class DataType : u8 {
     REAL,
     BOOL,
     VARCHAR,
+    POINT2D,
 };
 
 struct Number {
