@@ -4,7 +4,7 @@ create table if not exists users (
     age int index btree,
     birth_date varchar,
     married bool index hash,
-    location point
+    location point2d
 ) from file 'data/users.csv';
 
 -- insert into users values
@@ -26,3 +26,4 @@ select * from users where married = true;
 -- select * from users where name = 'name_3';
 select * from users where id = 'id_3';
 select * from users where id between 'id_1' and 'id_3';
+select * from users where location between (0, 0) and (4, 0);
