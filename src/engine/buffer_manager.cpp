@@ -140,7 +140,7 @@ BufferManager::~BufferManager() {
     flush_all();
 }
 
-auto BufferManager::fetch_page(const FileId& fid, pnum_t pnum) -> PageGuard {
+PageGuard BufferManager::fetch_page(const FileId& fid, pnum_t pnum) {
     assert(pnum != 0);
     assert(pnum != PAGE_NIL);
 
