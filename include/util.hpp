@@ -21,29 +21,29 @@
 //
 // Permite propagar el error de un std::expected. Usa una extensión de GCC para tener expresiones
 // con statements dentro.
-#define TRY(expr)                                     \
-    ({                                                \
-        auto&& __result = (expr);                     \
-        if (!__result)                                \
-            return std::unexpected(__result.error()); \
-                                                      \
-        std::move(*__result);                         \
+#define TRY(expr)                                \
+    ({                                           \
+        auto&& res = (expr);                     \
+        if (!res)                                \
+            return std::unexpected(res.error()); \
+                                                 \
+        std::move(*res);                         \
     })
 
-#define TRYV(expr)                                    \
-    ({                                                \
-        auto&& __result = (expr);                     \
-        if (!__result)                                \
-            return std::unexpected(__result.error()); \
+#define TRYV(expr)                               \
+    ({                                           \
+        auto&& res = (expr);                     \
+        if (!res)                                \
+            return std::unexpected(res.error()); \
     })
 
 #define TRY_OPT(expr)            \
     ({                           \
-        auto&& __opt = (expr);   \
-        if (!__opt)              \
+        auto&& opt = (expr);     \
+        if (!opt)                \
             return std::nullopt; \
                                  \
-        std::move(*__opt);       \
+        std::move(*opt);         \
     })
 
 namespace util {
