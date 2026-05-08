@@ -2,6 +2,7 @@
 #include <cassert>
 #include <utility>
 #include "engine/file_manager.hpp"
+#include "seq_file.hpp"
 
 using PageGuard = BufferManager::PageGuard;
 
@@ -141,6 +142,7 @@ BufferManager::~BufferManager() {
 
 auto BufferManager::fetch_page(const FileId& fid, pnum_t pnum) -> PageGuard {
     assert(pnum != 0);
+    assert(pnum != PAGE_NIL);
 
     PageId pid{fid, pnum};
     auto it = page_table.find(pid);

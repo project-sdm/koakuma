@@ -89,6 +89,14 @@ namespace util {
         }
     };
 
+    template<typename... Ts>
+    struct overloaded : Ts... {
+        using Ts::operator()...;
+    };
+
+    template<typename... Ts>
+    overloaded(Ts...) -> overloaded<Ts...>;
+
     template<typename T>
         requires std::is_trivially_copyable_v<T>
     T span_read(std::span<const u8> data, std::size_t offset) {

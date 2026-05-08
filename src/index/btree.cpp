@@ -1,5 +1,6 @@
 #include "index/btree.hpp"
 #include <cassert>
+#include <cstddef>
 #include <optional>
 #include <print>
 #include <queue>
@@ -296,9 +297,10 @@ void BTreeIndex::add(const Value& key, Rid rid) {
 void BTreeIndex::ugly_print() const {
     auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
 
-    int last_depth = 0;
-    std::queue<std::pair<pnum_t, int>> q;
-    q.emplace(file_hdr.root, 0);
+    std::queue<std::pair<pnum_t, std::size_t>> q;
+    std::size_t last_depth = 0;
+
+    q.emplace(file_hdr.root, last_depth);
 
     while (!q.empty()) {
         auto [pnum, depth] = q.front();

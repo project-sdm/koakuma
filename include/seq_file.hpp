@@ -17,18 +17,41 @@
 #include "types.hpp"
 #include "util.hpp"
 
-struct Rid {
-    pnum_t pnum;
-    u32 slot_idx;
+static constexpr pnum_t PAGE_NIL = -1;
 
-    Rid() = delete;
+struct Rid {
+    pnum_t pnum = PAGE_NIL;
+    u32 slot_idx = 0;
+
+    Rid();
     Rid(pnum_t pnum, u32 slot_idx);
 
     bool operator==(const Rid& other) const;
     bool operator<(const Rid& other) const;
 };
 
-static constexpr pnum_t PAGE_NIL = -1;
+template<>
+struct pack::PackSize<Rid> {
+    std::size_t operator()(const Rid& rid) const {
+        return pack_size<>(rid.pnum) + pack_size<>(rid.slot_idx);
+    }
+};
+
+template<>
+struct pack::Pack<Rid> {
+    void operator()(const Rid& rid, u8*& dest) const {
+        pack<>(rid.pnum, dest);
+        pack<>(rid.slot_idx, dest);
+    }
+};
+
+template<>
+struct pack::Unpack<Rid> {
+    void operator()(Rid& dest, const u8*& src) const {
+        unpack<>(dest.pnum, src);
+        unpack<>(dest.slot_idx, src);
+    }
+};
 
 using Value = std::variant<int, bool, f64, std::string, parser::Point2D>;
 using Row = std::vector<Value>;
@@ -246,6 +269,17 @@ struct std::formatter<Row, char> {
 
         std::format_to(out, ")");
         return out;
+    }
+};
+
+template<>
+struct std::formatter<Rid, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const Rid& rid, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "Rid({}, {})", rid.pnum, rid.slot_idx);
     }
 };
 

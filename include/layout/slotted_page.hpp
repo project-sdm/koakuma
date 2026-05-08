@@ -265,6 +265,17 @@ public:
         assert(hdr.used_heap >= removed.len);
         hdr.used_heap -= removed.len;
     }
+
+    void clear() {
+        if (hdr.slot_cnt == 0)
+            return;
+
+        is_dirty = true;
+
+        hdr.slot_cnt = 0;
+        hdr.data_begin = page.const_data().size_bytes();
+        hdr.used_heap = 0;
+    }
 };
 
 #endif
