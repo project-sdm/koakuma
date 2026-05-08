@@ -16,6 +16,8 @@ add_executable(koakuma
   src/engine/file_manager.cpp
   src/index/btree.cpp
   src/index/hash.cpp
+  src/index/rtree.cpp
+  src/layout/record_page.cpp
   src/layout/slotted_page.cpp
   src/main.cpp
   src/pack.cpp
