@@ -706,6 +706,63 @@ private:
         return false;
     }
 
+    std::vector<T> radius_search(const std::array<Coord, N>& point, Coord radius) const {
+        std::vector<T> results;
+
+        if (!root) {
+            return results;
+        }
+
+        Rect<Coord, N> search_rect;
+
+        for (std::size_t i = 0; i < N; ++i) {
+            search_rect.min[i] = point[i] - radius;
+            search_rect.max[i] = point[i] + radius;
+        }
+
+        radius_search_recursive(root.get(), point, radius * radius, search_rect, results);
+
+        return results;
+    }
+
+    void radius_search_recursive(const Node* node,
+                                 const std::array<Coord, N>& point,
+                                 Coord radius_sq,
+                                 const Rect<Coord, N>& search_rect,
+                                 std::vector<T>& results) const {
+        for (std::size_t i = 0; i < node->count; ++i) {
+            const auto& branch = node->branches[i];
+
+            if (!branch.rect.intersects(search_rect)) {
+                continue;
+            }
+
+            if (std::holds_alternative<T>(branch.data)) {
+                Coord dist_sq = 0;
+
+                for (std::size_t d = 0; d < N; ++d) {
+                    Coord v = point[d];
+
+                    if (v < branch.rect.min[d]) {
+                        Coord diff = branch.rect.min[d] - v;
+                        dist_sq += diff * diff;
+                    } else if (v > branch.rect.max[d]) {
+                        Coord diff = v - branch.rect.max[d];
+                        dist_sq += diff * diff;
+                    }
+                }
+
+                if (dist_sq <= radius_sq) {
+                    results.push_back(branch.value());
+                }
+
+            } else {
+                radius_search_recursive(branch.child().get(), point, radius_sq, search_rect,
+                                        results);
+            }
+        }
+    }
+
 public:
     RTree() = default;
 
