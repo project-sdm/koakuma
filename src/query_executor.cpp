@@ -367,7 +367,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         rapidcsv::Document doc{*stmt.file_path};
 
         if (doc.GetColumnCount() != columns.size())
-            throw std::runtime_error("column count mismatch");
+            return std::unexpected{InvalidCsvSchema{}};
 
         for (std::size_t i = 0; i < doc.GetRowCount(); ++i) {
             using Result = std::expected<Value, InvalidCsvCell>;

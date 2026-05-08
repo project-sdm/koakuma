@@ -47,6 +47,8 @@ struct InvalidIndexName {
     explicit InvalidIndexName(std::string name);
 };
 
+struct InvalidCsvSchema {};
+
 struct InvalidCsvCell {
     std::string text;
     ColumnType expected_type;
@@ -58,6 +60,7 @@ using ExecutionError = std::variant<catalog::InsertionError,
                                     UnexpectedType,
                                     TableNotFound,
                                     TableAlreadyExists,
+                                    InvalidCsvSchema,
                                     InvalidCsvCell,
                                     FileNotFound,
                                     InvalidIndexName>;
@@ -128,6 +131,17 @@ struct std::formatter<TableAlreadyExists, char> {
 
     static auto format(const TableAlreadyExists& err, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Table '{}' already exists.", err.table_name);
+    }
+};
+
+template<>
+struct std::formatter<InvalidCsvSchema, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format([[maybe_unused]] const InvalidCsvSchema& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "CSV does not match table schema.");
     }
 };
 
