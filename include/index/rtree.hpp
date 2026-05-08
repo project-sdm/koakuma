@@ -21,13 +21,10 @@
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
-#include "layout/slotted_page.hpp"
+#include "layout/record_page.hpp"
 #include "seq_file.hpp"
 #include "types.hpp"
 #include "util.hpp"
-
-template<std::size_t N>
-using Point = std::array<f64, N>;
 
 template<std::size_t N>
 struct Rect {
@@ -103,28 +100,29 @@ private:
         u64 level = 0;
     };
 
-    struct SlotExtra {
+    struct Record {
         Rect<N> rect{};
+        std::variant<Rid, pnum_t> var;
     };
 
     using SlotValue = std::variant<Rid, pnum_t>;
-    using NodePage = SlottedPage<NodeHeader, SlotExtra, SlotValue>;
+    using NodePage = RecordPage<Record, NodeHeader>;
 
     u32 choose_subtree(const NodePage& page, const Rect<N>& rect) const {
         if (page.const_header_extra().level == 0)
             throw std::invalid_argument("choose_subtree called on leaf node");
 
-        if (page.slot_cnt() == 0)
+        if (page.count() == 0)
             throw std::invalid_argument("internal node has no branches");
 
         u32 best = 0;
         f64 best_enlargement = std::numeric_limits<f64>::max();
         f64 best_volume = std::numeric_limits<f64>::max();
 
-        for (u32 i = 0; i < page.slot_cnt(); ++i) {
-            auto cur_rect = page.read_slot_extra(i).rect;
-            const f64 cur_volume = cur_rect.volume();
-            const f64 cur_enlargement = cur_rect.merge(rect).volume() - cur_volume;
+        for (u32 i = 0; i < page.count(); ++i) {
+            auto cur = page.read(i);
+            const f64 cur_volume = cur.rect.volume();
+            const f64 cur_enlargement = cur.rect.merge(rect).volume() - cur_volume;
 
             // NOTE: won't cur_enlargement == best_enlargement always be false
             // due to float precision?
@@ -146,7 +144,7 @@ private:
     };
 
     struct Partition {
-        std::vector<std::pair<SlotExtra, SlotValue>> buffer;
+        std::vector<Record> buffer;
         std::vector<Group> group;
         std::array<Rect<N>, 2> cover;
         std::array<f64, 2> area{};
@@ -162,10 +160,9 @@ private:
 
         for (u32 i = 0; i < total - 1; ++i) {
             for (u32 j = i + 1; j < total; ++j) {
-                const auto combined =
-                    partition.buffer[i].first.rect.merge(partition.buffer[j].first.rect);
-                const f64 waste = combined.volume() - partition.buffer[i].first.rect.volume() -
-                                  partition.buffer[j].first.rect.volume();
+                const auto combined = partition.buffer[i].rect.merge(partition.buffer[j].rect);
+                const f64 waste = combined.volume() - partition.buffer[i].rect.volume() -
+                                  partition.buffer[j].rect.volume();
 
                 if (waste > worst) {
                     worst = waste;
@@ -185,8 +182,8 @@ private:
         auto group_idx = static_cast<std::size_t>(group);
         partition.cover[group_idx] =
             (partition.count[group_idx] == 0)
-                ? partition.buffer[idx].first.rect
-                : partition.cover[group_idx].merge(partition.buffer[idx].first.rect);
+                ? partition.buffer[idx].rect
+                : partition.cover[group_idx].merge(partition.buffer[idx].rect);
 
         partition.area[group_idx] = partition.cover[group_idx].volume();
         partition.count[group_idx]++;
@@ -211,7 +208,7 @@ private:
                 if (partition.group[i] != Group::Unassigned)
                     continue;
 
-                const Rect<N>& rect = partition.buffer[i].first.rect;
+                const Rect<N>& rect = partition.buffer[i].rect;
 
                 auto merged0 = partition.cover[0].merge(rect);
                 auto merged1 = partition.cover[1].merge(rect);
@@ -248,13 +245,13 @@ private:
         }
     }
 
-    void split_node(NodePage& page, Rect<N> ins_rect, SlotValue ins_val, pnum_t& out_new_pnum) {
+    void split_node(NodePage& page, Record ins_rec, pnum_t& out_new_pnum) {
         Partition partition;
 
-        for (u32 i = 0; i < page.slot_cnt(); ++i)
-            partition.buffer.emplace_back(page.read_slot_extra(i), page.read_data(i));
+        for (u32 i = 0; i < page.count(); ++i)
+            partition.buffer.emplace_back(page.read(i));
 
-        partition.buffer.emplace_back(SlotExtra{std::move(ins_rect)}, ins_val);
+        partition.buffer.emplace_back(std::move(ins_rec));
         partition.group = std::vector<Group>(partition.buffer.size(), Group::Unassigned);
 
         pick_seeds(partition);
@@ -268,42 +265,39 @@ private:
 
         page.clear();
 
-        for (auto [i, data] : std::views::enumerate(partition.buffer)) {
-            auto [rect, val] = std::move(data);
-
+        for (auto [i, rec] : std::views::enumerate(partition.buffer)) {
             if (partition.group[i] == Group::A)
-                page.push_back(SlotExtra{std::move(rect)}, val);
+                page.push_back(std::move(rec));
             else
-                new_page.push_back(SlotExtra{std::move(rect)}, val);
+                new_page.push_back(std::move(rec));
         }
     }
 
-    bool add_branch(NodePage& page, const Rect<N>& ins_rect, SlotValue val, pnum_t& new_pnum) {
-        if (page.will_fit(val)) {
-            page.push_back(SlotExtra{std::move(ins_rect)}, val);
+    bool add_branch(NodePage& page, const Record& ins_rec, pnum_t& new_pnum) {
+        if (!page.is_full()) {
+            page.push_back(ins_rec);
             return false;
         }
 
-        split_node(page, std::move(ins_rect), val, new_pnum);
+        split_node(page, std::move(ins_rec), new_pnum);
         return true;
     }
 
     Rect<N> node_cover(const NodePage& page) {
-        if (page.slot_cnt() == 0) {
+        if (page.count() == 0) {
             throw std::runtime_error("Empty node has no MBR");
         }
 
-        Rect result = page.read_slot_extra(0).rect;
+        auto result = page.read(0).rect;
 
-        for (std::size_t i = 1; i < page.slot_cnt(); ++i)
-            result = result.merge(page.read_slot_extra(i).rect);
+        for (std::size_t i = 1; i < page.count(); ++i)
+            result = result.merge(page.read(i).rect);
 
         return result;
     }
 
     bool insert_recursive(pnum_t pnum,
-                          const Rect<N>& ins_rect,
-                          SlotValue ins_val,
+                          const Record& ins_rec,
                           pnum_t& new_pnum,
                           std::size_t target_level) {
         u64 level = 0;
@@ -318,31 +312,31 @@ private:
                 throw std::invalid_argument("invalid rtree level in insert");
 
             if (level == target_level)
-                return add_branch(page, std::move(ins_rect), ins_val, new_pnum);
+                return add_branch(page, ins_rec, new_pnum);
 
-            idx = choose_subtree(page, ins_rect);
-            child_pnum = std::get<pnum_t>(page.read_data(idx));
+            idx = choose_subtree(page, ins_rec.rect);
+            child_pnum = std::get<pnum_t>(page.read(idx).var);
         }
 
         pnum_t split_pnum = PAGE_NIL;
-        bool child_split =
-            insert_recursive(child_pnum, ins_rect, ins_val, split_pnum, target_level);
+        bool child_split = insert_recursive(child_pnum, ins_rec, split_pnum, target_level);
 
         NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
 
         if (!child_split) {
-            Rect prev_rect = page.read_slot_extra(idx).rect;
-            page.write_slot_extra(idx, SlotExtra{prev_rect.merge(ins_rect)});
+            auto prev = page.read(idx);
+            prev.rect = prev.rect.merge(ins_rec.rect);
+            page.write(idx, prev);
             return false;
         }
 
-        Rect<N> new_child_cover{};
+        auto new_child_rec = page.read(idx);
         {
             NodePage child_page{eng.buf_mgr.fetch_page(fid, child_pnum)};
-            new_child_cover = node_cover(child_page);
+            new_child_rec.rect = node_cover(child_page);
         }
 
-        page.write_slot_extra(idx, SlotExtra{new_child_cover});
+        page.write(idx, new_child_rec);
 
         Rect<N> new_branch_cover{};
         {
@@ -350,7 +344,7 @@ private:
             new_branch_cover = node_cover(split_page);
         }
 
-        return add_branch(page, new_branch_cover, split_pnum, new_pnum);
+        return add_branch(page, Record{new_branch_cover, split_pnum}, new_pnum);
     }
 
 public:
@@ -378,25 +372,24 @@ public:
                     cur_slot = 0;
                 }
 
-                assert(!page || cur_slot <= page->slot_cnt());
+                assert(!page || cur_slot <= page->count());
 
-                if (page && cur_slot == page->slot_cnt()) {
+                if (page && cur_slot == page->count()) {
                     page.reset();
                     cur_slot = 0;
                     continue;
                 }
 
-                auto extra = page->read_slot_extra(cur_slot);
-                auto data = page->read_data(cur_slot);
+                auto rec = page->read(cur_slot);
                 cur_slot += 1;
 
-                if (!rect.intersects(extra.rect))
+                if (!rect.intersects(rec.rect))
                     continue;
 
-                if (auto* rid = std::get_if<Rid>(&data))
+                if (auto* rid = std::get_if<Rid>(&rec.data))
                     return *rid;
 
-                q.push(std::get<pnum_t>(data));
+                q.push(std::get<pnum_t>(rec.data));
             }
         }
 
@@ -422,11 +415,10 @@ public:
               k{k} {
             NodePage root_page{buf_mgr.fetch_page(fid, root_pnum)};
 
-            for (u32 i = 0; i < root_page.slot_cnt(); ++i) {
-                Rect<N> rect = root_page.read_slot_extra(i).rect;
-                SlotValue val = root_page.read_data(i);
-                f64 dist = query.min_distance_sq(rect);
-                pq.emplace(std::move(rect), std::move(val), dist);
+            for (u32 i = 0; i < root_page.count(); ++i) {
+                Record rec = root_page.read(i);
+                f64 dist = query.min_distance_sq(rec.rect);
+                pq.emplace(std::move(rec), dist);
             }
         }
 
@@ -435,20 +427,19 @@ public:
                 auto entry = pq.top();
                 pq.pop();
 
-                if (const auto* rid = std::get_if<Rid>(&entry.val)) {
+                if (const auto* rid = std::get_if<Rid>(&entry.rec.var)) {
                     k -= 1;
                     return *rid;
                 }
 
-                auto child_pnum = std::get<pnum_t>(entry.val);
+                auto child_pnum = std::get<pnum_t>(entry.rec.var);
                 NodePage child_page{buf_mgr.fetch_page(fid, child_pnum)};
 
-                for (u32 i = 0; i < child_page.slot_cnt(); ++i) {
-                    Rect<N> rect = child_page.read_slot_extra(i).rect;
-                    SlotValue val = child_page.read_data(i);
-                    f64 dist = query.min_distance_sq(rect);
+                for (u32 i = 0; i < child_page.count(); ++i) {
+                    Record rec = child_page.read(i);
+                    f64 dist = query.min_distance_sq(rec.rect);
 
-                    pq.emplace(std::move(rect), std::move(val), dist);
+                    pq.emplace(std::move(rec), dist);
                 }
             }
 
@@ -458,8 +449,7 @@ public:
 
     private:
         struct KnnEntry {
-            Rect<N> rect;
-            SlotValue val;
+            Record rec;
             f64 distance = 0;
 
             bool operator>(const KnnEntry& other) const {
@@ -502,12 +492,11 @@ public:
 
             std::print("({}): ", extra.level);
 
-            for (u32 i = 0; i < page.slot_cnt(); ++i) {
-                auto extra = page.read_slot_extra(i);
-                std::print("{}-{} ", extra.rect.min, extra.rect.max);
+            for (u32 i = 0; i < page.count(); ++i) {
+                auto rec = page.read(i);
+                std::print("{}-{} ", rec.rect.min, rec.rect.max);
 
-                auto data = page.read_data(i);
-                if (const auto* child_pnum = std::get_if<pnum_t>(&data))
+                if (const auto* child_pnum = std::get_if<pnum_t>(&rec.var))
                     q.emplace(*child_pnum, depth + 1);
             }
 
@@ -536,7 +525,7 @@ public:
         pnum_t new_pnum = PAGE_NIL;
         Rect ins_rect{key, key};
 
-        bool root_split = insert_recursive(file_hdr.root, ins_rect, rid, new_pnum, 0);
+        bool root_split = insert_recursive(file_hdr.root, Record{ins_rect, rid}, new_pnum, 0);
 
         if (root_split) {
             assert(new_pnum != PAGE_NIL);
@@ -551,13 +540,13 @@ public:
                     new_root_page.header_extra().level = 1 + root_page.const_header_extra().level;
 
                     Rect old_cover = node_cover(root_page);
-                    new_root_page.push_back(SlotExtra{old_cover}, file_hdr.root);
+                    new_root_page.push_back(Record{old_cover, file_hdr.root});
                 }
 
                 {
                     NodePage new_page{eng.buf_mgr.fetch_page(fid, new_pnum)};
                     Rect new_cover = node_cover(new_page);
-                    new_root_page.push_back(SlotExtra{new_cover}, new_pnum);
+                    new_root_page.push_back(Record{new_cover, new_pnum});
                 }
             }
 
@@ -569,7 +558,7 @@ public:
     bool remove_recursive(const Rect<N>& rect, pnum_t pnum, std::vector<pnum_t>& reinsert_list) {
         NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
         if (page.const_header_extra().level == 0) {
-            for (u32 i = 0; i < page.slot_cnt(); ++i) {
+            for (u32 i = 0; i < page.count(); ++i) {
             }
         }
     }
@@ -584,22 +573,20 @@ public:
         for (auto& pnum : reinsert_list) {
             NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
 
-            for (u32 i = 0; i < page.slot_cnt(); ++i) {
+            for (u32 i = 0; i < page.count(); ++i) {
                 pnum_t new_pnum = PAGE_NIL;
 
-                auto slot_extra = page.read_slot_extra(i);
+                auto rec = page.read(i);
                 auto header_extra = page.const_header_extra();
-                auto data = page.read_data(i);
 
-                insert_recursive(file_hdr.root, slot_extra.rect, std::move(data), new_pnum,
-                                 header_extra.level);
+                insert_recursive(file_hdr.root, rec, new_pnum, header_extra.level);
             }
         }
 
         NodePage root_page{eng.buf_mgr.fetch_page(fid, file_hdr.root)};
 
-        if (root_page.slot_cnt() == 1 && root_page.const_header_extra().level != 0) {
-            file_hdr.root = std::get<pnum_t>(root_page.read_data(0));
+        if (root_page.count() == 1 && root_page.const_header_extra().level != 0) {
+            file_hdr.root = std::get<pnum_t>(root_page.read(0).var);
             eng.file_mgr.write_user_header(fid, file_hdr);
         }
     }
@@ -626,11 +613,6 @@ public:
 
     using NodePtr = std::unique_ptr<Node>;
     using VariantType = std::variant<T, NodePtr>;
-
-    struct KnnEntry {
-        const Branch* branch;
-        f64 distance;
-    };
 
 private:
     NodePtr root;
@@ -706,62 +688,62 @@ private:
         return false;
     }
 
-    std::vector<T> radius_search(const std::array<Coord, N>& point, Coord radius) const {
-        std::vector<T> results;
-
-        if (!root) {
-            return results;
-        }
-
-        Rect<Coord, N> search_rect;
-
-        for (std::size_t i = 0; i < N; ++i) {
-            search_rect.min[i] = point[i] - radius;
-            search_rect.max[i] = point[i] + radius;
-        }
-
-        radius_search_recursive(root.get(), point, radius * radius, search_rect, results);
-
-        return results;
-    }
-
-    void radius_search_recursive(const Node* node,
-                                 const std::array<Coord, N>& point,
-                                 Coord radius_sq,
-                                 const Rect<Coord, N>& search_rect,
-                                 std::vector<T>& results) const {
-        for (std::size_t i = 0; i < node->count; ++i) {
-            const auto& branch = node->branches[i];
-
-            if (!branch.rect.intersects(search_rect)) {
-                continue;
-            }
-
-            if (std::holds_alternative<T>(branch.data)) {
-                Coord dist_sq = 0;
-
-                for (std::size_t d = 0; d < N; ++d) {
-                    Coord v = point[d];
-
-                    if (v < branch.rect.min[d]) {
-                        Coord diff = branch.rect.min[d] - v;
-                        dist_sq += diff * diff;
-                    } else if (v > branch.rect.max[d]) {
-                        Coord diff = v - branch.rect.max[d];
-                        dist_sq += diff * diff;
-                    }
-                }
-
-                if (dist_sq <= radius_sq) {
-                    results.push_back(branch.value());
-                }
-
-            } else {
-                radius_search_recursive(branch.child().get(), point, radius_sq, search_rect,
-                                        results);
-            }
-        }
-    }
+    // std::vector<T> radius_search(const std::array<Coord, N>& point, Coord radius) const {
+    //     std::vector<T> results;
+    //
+    //     if (!root) {
+    //         return results;
+    //     }
+    //
+    //     Rect<Coord, N> search_rect;
+    //
+    //     for (std::size_t i = 0; i < N; ++i) {
+    //         search_rect.min[i] = point[i] - radius;
+    //         search_rect.max[i] = point[i] + radius;
+    //     }
+    //
+    //     radius_search_recursive(root.get(), point, radius * radius, search_rect, results);
+    //
+    //     return results;
+    // }
+    //
+    // void radius_search_recursive(const Node* node,
+    //                              const std::array<Coord, N>& point,
+    //                              Coord radius_sq,
+    //                              const Rect<Coord, N>& search_rect,
+    //                              std::vector<T>& results) const {
+    //     for (std::size_t i = 0; i < node->count; ++i) {
+    //         const auto& branch = node->branches[i];
+    //
+    //         if (!branch.rect.intersects(search_rect)) {
+    //             continue;
+    //         }
+    //
+    //         if (std::holds_alternative<T>(branch.data)) {
+    //             Coord dist_sq = 0;
+    //
+    //             for (std::size_t d = 0; d < N; ++d) {
+    //                 Coord v = point[d];
+    //
+    //                 if (v < branch.rect.min[d]) {
+    //                     Coord diff = branch.rect.min[d] - v;
+    //                     dist_sq += diff * diff;
+    //                 } else if (v > branch.rect.max[d]) {
+    //                     Coord diff = v - branch.rect.max[d];
+    //                     dist_sq += diff * diff;
+    //                 }
+    //             }
+    //
+    //             if (dist_sq <= radius_sq) {
+    //                 results.push_back(branch.value());
+    //             }
+    //
+    //         } else {
+    //             radius_search_recursive(branch.child().get(), point, radius_sq, search_rect,
+    //                                     results);
+    //         }
+    //     }
+    // }
 
 public:
     RTree() = default;

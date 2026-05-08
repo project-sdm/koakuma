@@ -8,6 +8,7 @@
 #include "engine/file_manager.hpp"
 #include "index/btree.hpp"
 #include "index/hash.hpp"
+#include "index/rtree.hpp"
 #include "seq_file.hpp"
 #include "util.hpp"
 
@@ -63,32 +64,57 @@ std::expected<Rid, catalog::InsertionError> Table::insert(const Row& row) {
         auto cursor = seq_file.cursor();
 
         for (auto& [col_idx, index] : col_indices) {
-            if (auto* hash = std::get_if<HashIndex>(&index)) {
-                hash->init();
+            TRYV(std::visit(
+                util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
+                                     hash.init();
 
-                while (auto data = cursor.next()) {
-                    auto [rid, row] = *data;
-                    hash->add(TRY(val_to_hash_val(row[col_idx])), rid);
-                }
-            } else if (auto* btree = std::get_if<BTreeIndex>(&index)) {
-                btree->init();
+                                     while (auto data = cursor.next()) {
+                                         auto [rid, row] = *data;
+                                         hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
+                                     }
 
-                while (auto data = cursor.next()) {
-                    auto [rid, row] = *data;
-                    btree->add(row[col_idx], rid);
-                }
-            } else {
-                std::unreachable();
-            }
+                                     return {};
+                                 },
+                                 [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
+                                     btree.init();
+
+                                     while (auto data = cursor.next()) {
+                                         auto [rid, row] = *data;
+                                         btree.add(row[col_idx], rid);
+                                     }
+
+                                     return {};
+                                 },
+                                 [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
+                                     rtree.init();
+
+                                     while (auto data = cursor.next()) {
+                                         auto [rid, row] = *data;
+                                         auto point = std::get<Point<2>>(row[col_idx]);
+                                         rtree.add(point, rid);
+                                     }
+
+                                     return {};
+                                 }},
+                index));
         }
     } else {
         for (auto& [col_idx, index] : col_indices) {
-            if (auto* hash = std::get_if<HashIndex>(&index))
-                hash->add(TRY(val_to_hash_val(row[col_idx])), rid);
-            else if (auto* btree = std::get_if<BTreeIndex>(&index))
-                btree->add(row[col_idx], rid);
-            else
-                std::unreachable();
+            TRYV(std::visit(
+                util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
+                                     hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
+                                     return {};
+                                 },
+                                 [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
+                                     btree.add(row[col_idx], rid);
+                                     return {};
+                                 },
+                                 [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
+                                     auto point = std::get<Point<2>>(row[col_idx]);
+                                     rtree.add(point, rid);
+                                     return {};
+                                 }},
+                index));
         }
     }
 
@@ -133,6 +159,9 @@ namespace catalog {
                         break;
                     case IndexType::BTREE:
                         create_index<BTreeIndex>(eng, name, col.name);
+                        break;
+                    case IndexType::RTREE:
+                        create_index<RTreeIndex<2>>(eng, name, col.name);
                         break;
                 }
             }

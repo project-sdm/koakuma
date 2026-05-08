@@ -12,21 +12,11 @@
 #include "httplib/httplib.h"
 #include "json/json.hpp"
 #include "magic_enum/magic_enum.hpp"
-#include "parser/ast.hpp"
 #include "parser/parser.hpp"
 #include "query_executor.hpp"
 #include "seq_file.hpp"
 
 using nlohmann::json;
-
-namespace parser {
-    void to_json(json& j, const Point2D& pt) {  // NOLINT(misc-use-internal-linkage)
-        j = json{
-            {"x", pt.x},
-            {"y", pt.y},
-        };
-    }
-}
 
 namespace std {
 

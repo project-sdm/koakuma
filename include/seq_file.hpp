@@ -13,7 +13,6 @@
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
 #include "pack.hpp"
-#include "parser/ast.hpp"
 #include "types.hpp"
 #include "util.hpp"
 
@@ -53,7 +52,10 @@ struct pack::Unpack<Rid> {
     }
 };
 
-using Value = std::variant<int, bool, f64, std::string, parser::Point2D>;
+template<std::size_t N>
+using Point = std::array<f64, N>;
+
+using Value = std::variant<int, bool, f64, std::string, Point<2>>;
 using Row = std::vector<Value>;
 
 enum class ColumnType : u8 {
@@ -67,6 +69,7 @@ enum class ColumnType : u8 {
 enum class IndexType : u8 {
     HASH,
     BTREE,
+    RTREE,
 };
 
 struct Column {

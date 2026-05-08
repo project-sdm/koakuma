@@ -67,6 +67,11 @@ namespace {
                     return *b;
 
                 break;
+            case ColumnType::POINT2D:
+                if (auto* p = std::get_if<parser::Point2D>(&lit))
+                    return Point<2>{p->x, p->y};
+
+                break;
             default: {
             }
         }
@@ -334,6 +339,8 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
                     col_index = IndexType::HASH;
                 else if (index->name == "btree")
                     col_index = IndexType::BTREE;
+                else if (index->name == "rtree")
+                    col_index = IndexType::RTREE;
                 else
                     return std::unexpected{InvalidIndexName{index->name}};
             }
@@ -383,7 +390,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
                                            case ColumnType::BOOL:
                                                return doc.GetCell<bool>(j, i);
                                            case ColumnType::POINT2D:
-                                               return doc.GetCell<parser::Point2D>(j, i);
+                                               return doc.GetCell<Point<2>>(j, i);
                                        }
 
                                        std::unreachable();
@@ -561,14 +568,13 @@ void rapidcsv::Converter<bool>::ToVal(const std::string& pStr, bool& pVal) const
 }
 
 template<>
-void rapidcsv::Converter<parser::Point2D>::ToVal(const std::string& pStr,
-                                                 parser::Point2D& pVal) const {
+void rapidcsv::Converter<Point<2>>::ToVal(const std::string& pStr, Point<2>& pVal) const {
     std::size_t idx = 0;
 
-    pVal.x = std::stod(pStr, &idx);
+    pVal[0] = std::stod(pStr, &idx);
 
     if (pStr[idx] != ';')
         throw std::invalid_argument("no ; in csv point");
 
-    pVal.y = std::stod(pStr.substr(idx + 1), &idx);
+    pVal[1] = std::stod(pStr.substr(idx + 1), &idx);
 }

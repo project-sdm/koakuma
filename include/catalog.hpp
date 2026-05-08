@@ -10,10 +10,11 @@
 #include "engine/engine.hpp"
 #include "index/btree.hpp"
 #include "index/hash.hpp"
+#include "index/rtree.hpp"
 #include "seq_file.hpp"
 
 namespace catalog {
-    using AnyIndex = std::variant<BTreeIndex, HashIndex>;
+    using AnyIndex = std::variant<BTreeIndex, HashIndex, RTreeIndex<2>>;
 
     struct DuplicatePrimaryKey {
         Value pkey;
