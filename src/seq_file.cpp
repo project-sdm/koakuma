@@ -1,7 +1,6 @@
 #include "seq_file.hpp"
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <optional>
@@ -37,6 +36,8 @@ SeqFile::SeqFile(Engine& engine, FileId fid)
       fid{fid} {}
 
 void SeqFile::init(std::vector<Column> columns, u32 pkey_col) {
+    eng.file_mgr.init_file(fid);
+
     SeqHeader file_hdr{std::move(columns), pkey_col};
     eng.file_mgr.write_user_header(fid, file_hdr);
 
@@ -149,7 +150,7 @@ Row SeqFile::read_rid(Rid rid) const {
     return page.read_data(rid.slot_idx);
 }
 
-std::optional<Rid> SeqFile::add(const Row& row) {
+std::optional<std::pair<Rid, SeqFile::InsertResult>> SeqFile::add(const Row& row) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
     const Value& pkey = row[file_hdr.pkey_col];
 
@@ -164,7 +165,6 @@ std::optional<Rid> SeqFile::add(const Row& row) {
 }
 
 void SeqFile::rebuild(SeqHeader& file_hdr) {
-    assert(false);
     std::vector<Row> aux_rows;
 
     {
@@ -239,7 +239,7 @@ void SeqFile::rebuild(SeqHeader& file_hdr) {
 }
 
 // assumes that `row`'s primary key is not already in the aux page
-Rid SeqFile::insert_into_aux(const Row& row) {
+std::pair<Rid, SeqFile::InsertResult> SeqFile::insert_into_aux(const Row& row) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
 
     {
@@ -250,12 +250,16 @@ Rid SeqFile::insert_into_aux(const Row& row) {
 
         if (aux_page.will_fit(row)) {
             aux_page.push_back(SlotExtra{true}, row);
-            return Rid{aux_pnum, new_slot_idx};
+            return std::make_pair(Rid{aux_pnum, new_slot_idx}, InsertResult::NONE);
         }
     }
 
     rebuild(file_hdr);
-    return insert_into_aux(row);
+
+    auto [rid, sub_result] = insert_into_aux(row);
+    assert(sub_result == InsertResult::NONE);
+
+    return std::make_pair(rid, InsertResult::REBUILD);
 }
 
 std::optional<Rid> SeqFile::remove(const Value& pkey) {

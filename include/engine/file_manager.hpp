@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 #include "pack.hpp"
 #include "types.hpp"
@@ -105,6 +106,7 @@ public:
     void init_file(FileId fid);
 
     [[nodiscard]] static bool exists(const std::filesystem::path& filename);
+    [[nodiscard]] static bool remove(const std::filesystem::path& filename);
 
     [[nodiscard]] pnum_t alloc_page(const FileId& fid);
     void free_page(const FileId& fid, pnum_t pnum);

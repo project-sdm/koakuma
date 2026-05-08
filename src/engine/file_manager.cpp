@@ -203,6 +203,10 @@ bool FileManager::exists(const std::filesystem::path& filename) {
     return std::filesystem::exists(filename);
 }
 
+bool FileManager::remove(const std::filesystem::path& filename) {
+    return std::filesystem::remove(filename);
+}
+
 const std::filesystem::path& FileManager::file_path(FileId fid) const {
     const auto& file = open_files.at(fid);
     return file.path;

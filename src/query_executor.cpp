@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <expected>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <print>
@@ -35,6 +36,12 @@ TableAlreadyExists::TableAlreadyExists(std::string table_name)
 InvalidCsvCell::InvalidCsvCell(std::string text, ColumnType expected_type)
     : text{std::move(text)},
       expected_type{expected_type} {}
+
+FileNotFound::FileNotFound(std::filesystem::path path)
+    : path{std::move(path)} {}
+
+InvalidIndexName::InvalidIndexName(std::string name)
+    : name{std::move(name)} {}
 
 namespace {
     std::expected<Value, ExecutionError> lit2val(parser::ExprLit lit, ColumnType col_type) {
@@ -291,22 +298,24 @@ namespace {
 QueryExecutor::QueryExecutor(Engine& engine)
     : engine{engine} {}
 
-std::expected<u32, ExecutionError> QueryExecutor::exec(const catalog::Catalog& catalog,
-                                                       const parser::SourceFile& source_file,
-                                                       RowSink& sink) {
+std::expected<void, ExecutionError> QueryExecutor::exec(const catalog::Catalog& catalog,
+                                                        const parser::SourceFile& source_file,
+                                                        RowSink& sink) {
     Executor executor{engine, catalog, sink};
 
     for (const auto& stmt : source_file.statements) {
-        std::println("==================================");
         TRYV(std::visit(executor, stmt));
         std::println();
     }
 
-    return static_cast<u32>(source_file.statements.size());
+    return {};
 }
 
 std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     const parser::CreateStatement& stmt) const {
+    if (stmt.file_path && !std::filesystem::exists(*stmt.file_path))
+        return std::unexpected{FileNotFound{*stmt.file_path}};
+
     std::size_t n_columns = stmt.columns.size();
 
     std::vector<Column> columns;
@@ -326,7 +335,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
                 else if (index->name == "btree")
                     col_index = IndexType::BTREE;
                 else
-                    std::println("invalid index name: `{}`", index->name);
+                    return std::unexpected{InvalidIndexName{index->name}};
             }
         }
 
@@ -339,7 +348,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         if (!stmt.if_not_exists)
             return std::unexpected{TableAlreadyExists{stmt.table_name}};
 
-        std::println("warning: {}", TableAlreadyExists{stmt.table_name});
+        std::println("Warning: {}", TableAlreadyExists{stmt.table_name});
         return {};
     }
 
@@ -394,6 +403,19 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
 
             TRYV(table->insert(row));
         }
+    }
+
+    return {};
+}
+
+std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
+    const parser::DropStatement& stmt) const {
+    if (!catalog.drop_table(stmt.table_name)) {
+        if (!stmt.if_exists)
+            return std::unexpected{TableNotFound{stmt.table_name}};
+
+        std::println("Warning: {}", TableNotFound{stmt.table_name});
+        return {};
     }
 
     return {};

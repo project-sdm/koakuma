@@ -105,8 +105,13 @@ namespace parser {
         std::optional<Filter> filter;
     };
 
-    using Statement =
-        std::variant<CreateStatement, SelectStatement, InsertStatement, DeleteStatement>;
+    struct DropStatement {
+        std::string table_name;
+        bool if_exists = false;
+    };
+
+    using Statement = std::
+        variant<CreateStatement, SelectStatement, InsertStatement, DeleteStatement, DropStatement>;
 
     struct SourceFile {
         std::vector<Statement> statements;
@@ -356,6 +361,18 @@ struct std::formatter<parser::DeleteStatement, char> {
         }
 
         return std::format_to(ctx.out(), "DELETE FROM {} ", stmt.table_name);
+    }
+};
+
+template<>
+struct std::formatter<parser::DropStatement, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const parser::DropStatement& stmt, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "DROP TABLE {} - if exists: {} ", stmt.table_name,
+                              stmt.if_exists);
     }
 };
 

@@ -120,7 +120,7 @@ struct std::formatter<ValueNotHashable, char> {
     }
 
     static auto format(const ValueNotHashable& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "value {} is not hashable", err.val);
+        return std::format_to(ctx.out(), "Value {} is not hashable.", err.val);
     }
 };
 

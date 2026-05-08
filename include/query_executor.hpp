@@ -35,6 +35,18 @@ struct TableAlreadyExists {
     explicit TableAlreadyExists(std::string table_name);
 };
 
+struct FileNotFound {
+    std::filesystem::path path;
+
+    explicit FileNotFound(std::filesystem::path path);
+};
+
+struct InvalidIndexName {
+    std::string name;
+
+    explicit InvalidIndexName(std::string name);
+};
+
 struct InvalidCsvCell {
     std::string text;
     ColumnType expected_type;
@@ -46,7 +58,9 @@ using ExecutionError = std::variant<catalog::InsertionError,
                                     UnexpectedType,
                                     TableNotFound,
                                     TableAlreadyExists,
-                                    InvalidCsvCell>;
+                                    InvalidCsvCell,
+                                    FileNotFound,
+                                    InvalidIndexName>;
 
 class QueryExecutor {
 public:
@@ -58,9 +72,9 @@ public:
 
     explicit QueryExecutor(Engine& engine);
 
-    std::expected<u32, ExecutionError> exec(const catalog::Catalog& catalog,
-                                            const parser::SourceFile& source_file,
-                                            RowSink& sink);
+    std::expected<void, ExecutionError> exec(const catalog::Catalog& catalog,
+                                             const parser::SourceFile& source_file,
+                                             RowSink& sink);
 
 private:
     struct Executor {
@@ -72,6 +86,7 @@ private:
         std::expected<void, ExecutionError> operator()(const parser::SelectStatement& stmt);
         std::expected<void, ExecutionError> operator()(const parser::InsertStatement& stmt) const;
         std::expected<void, ExecutionError> operator()(const parser::DeleteStatement& stmt) const;
+        std::expected<void, ExecutionError> operator()(const parser::DropStatement& stmt) const;
 
         [[nodiscard]] static std::expected<volcano::VolcanoIterator, ExecutionError> apply_filter(
             volcano::VolcanoIterator iter,
@@ -89,7 +104,7 @@ struct std::formatter<UnexpectedType, char> {
     }
 
     static auto format(const UnexpectedType& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Could not cast {} as {}", err.lit,
+        return std::format_to(ctx.out(), "Could not cast {} as {}.", err.lit,
                               magic_enum::enum_name(err.expected_type));
     }
 };
@@ -101,7 +116,7 @@ struct std::formatter<TableNotFound, char> {
     }
 
     static auto format(const TableNotFound& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Table '{}' does not exist", err.table_name);
+        return std::format_to(ctx.out(), "Table '{}' does not exist.", err.table_name);
     }
 };
 
@@ -112,7 +127,7 @@ struct std::formatter<TableAlreadyExists, char> {
     }
 
     static auto format(const TableAlreadyExists& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Table {} already exists", err.table_name);
+        return std::format_to(ctx.out(), "Table '{}' already exists.", err.table_name);
     }
 };
 
@@ -123,8 +138,30 @@ struct std::formatter<InvalidCsvCell, char> {
     }
 
     static auto format(const InvalidCsvCell& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Could not parse CSV cell `{}` as {}", err.text,
+        return std::format_to(ctx.out(), "Could not parse CSV cell `{}` as {}.", err.text,
                               magic_enum::enum_name(err.expected_type));
+    }
+};
+
+template<>
+struct std::formatter<FileNotFound, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const FileNotFound& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "File '{}' not found.", err.path.string());
+    }
+};
+
+template<>
+struct std::formatter<InvalidIndexName, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const InvalidIndexName& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "Invalid index: '{}'", err.name);
     }
 };
 

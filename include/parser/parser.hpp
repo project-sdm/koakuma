@@ -34,6 +34,7 @@ namespace parser {
         std::expected<SelectStatement, CompileError> select_statement();
         std::expected<InsertStatement, CompileError> insert_statement();
         std::expected<DeleteStatement, CompileError> delete_statement();
+        std::expected<DropStatement, CompileError> drop_statement();
 
         std::expected<InsertValue, CompileError> insert_value();
         std::expected<ExprLit, CompileError> expr_lit();
@@ -87,10 +88,10 @@ namespace parser {
     template<typename T>
     std::expected<T, CompileError> Parser::expect_var() {
         auto t_opt = tokens.next();
-        auto t = TRY(*std::move(t_opt));
+        auto t = TRY(*t_opt);
 
         if (auto* tok = t.get_if<T>())
-            return *tok;
+            return T{*tok};
 
         return std::unexpected{ParseError::UnexpectedToken};
     }

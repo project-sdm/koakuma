@@ -15,6 +15,8 @@ BTreeIndex::BTreeIndex(Engine& engine, FileId fid)
       fid{fid} {}
 
 void BTreeIndex::init() {
+    eng.file_mgr.init_file(fid);
+
     // init header
     BTreeHeader file_hdr{};
     file_hdr.root = eng.file_mgr.alloc_page(fid);

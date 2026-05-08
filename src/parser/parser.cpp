@@ -1,6 +1,7 @@
 #include "parser/parser.hpp"
 #include <cassert>
 #include <expected>
+#include <print>
 #include "parser/ast.hpp"
 #include "parser/error.hpp"
 #include "parser/token.hpp"
@@ -32,6 +33,8 @@ namespace parser {
                     return insert_statement();
                 case Keyword::Delete:
                     return delete_statement();
+                case Keyword::Drop:
+                    return drop_statement();
                 default:
                     return std::unexpected{ParseError::UnexpectedToken};
             }
@@ -129,15 +132,34 @@ namespace parser {
     std::expected<DeleteStatement, CompileError> Parser::delete_statement() {
         TRYV(expect_val<Keyword::Delete>());
         TRYV(expect_val<Keyword::From>());
-        auto tok = TRY(expect_var<Identifier>());
+        auto table_tok = TRY(expect_var<Identifier>());
 
         DeleteStatement stmt{};
-        stmt.table_name = tok.value;
+        stmt.table_name = table_tok.value;
 
         if (TRY(accept_val<Keyword::Where>()))
             stmt.filter = TRY(where_declaration());
 
         TRYV(expect_val<Symbol::SemiColon>());
+        return stmt;
+    }
+
+    std::expected<DropStatement, CompileError> Parser::drop_statement() {
+        TRYV(expect_val<Keyword::Drop>());
+        TRYV(expect_val<Keyword::Table>());
+
+        DropStatement stmt{};
+
+        // FIX: when no if exists is provided, table_name s empty
+        if (TRY(accept_val<Keyword::If>())) {
+            TRYV(expect_val<Keyword::Exists>());
+            stmt.if_exists = true;
+        }
+
+        auto table_tok = TRY(expect_var<Identifier>());
+        TRYV(expect_val<Symbol::SemiColon>());
+
+        stmt.table_name = table_tok.value;
         return stmt;
     }
 

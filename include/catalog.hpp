@@ -70,6 +70,8 @@ namespace catalog {
                                         const std::string& name,
                                         std::vector<Column> columns,
                                         std::size_t pkey_col) const;
+
+        [[nodiscard]] bool drop_table(const std::string& name) const;
     };
 
     template<typename Index>
@@ -79,7 +81,6 @@ namespace catalog {
         std::string path = index_path(table_name, col_name);
 
         FileId fid = eng.file_mgr.open_create(path);
-        eng.file_mgr.init_file(fid);
 
         {
             Index index{eng, fid};
@@ -98,7 +99,7 @@ struct std::formatter<catalog::DuplicatePrimaryKey, char> {
     }
 
     static auto format(const catalog::DuplicatePrimaryKey& err, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Puplicate primary key: {}", err.pkey);
+        return std::format_to(ctx.out(), "Duplicate primary key: {}.", err.pkey);
     }
 };
 

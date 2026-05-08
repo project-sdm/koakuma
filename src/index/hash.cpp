@@ -35,6 +35,8 @@ HashIndex::HashIndex(Engine& eng, FileId fid)
       fid{fid} {}
 
 void HashIndex::init() {
+    eng.file_mgr.init_file(fid);
+
     HashHeader hdr{};
 
     pnum_t init_bucket = eng.file_mgr.alloc_page(fid);

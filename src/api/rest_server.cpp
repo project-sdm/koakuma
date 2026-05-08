@@ -1,5 +1,7 @@
 #include "api/rest_server.hpp"
 #include <chrono>
+#include <exception>
+#include <expected>
 #include <format>
 #include <print>
 #include <string>
@@ -122,12 +124,29 @@ namespace api {
 
         AccumulatorSink sink{};
 
-        auto exec_start = clock::now();
-        auto exec_res = executor.exec(catalog, *parsed, sink);
-        auto exec_end = clock::now();
+        std::expected<void, ExecutionError> exec_res;
+
+        u64 time_ms = 0;
+
+        try {
+            auto start = clock::now();
+            exec_res = executor.exec(catalog, *parsed, sink);
+            auto end = clock::now();
+
+            time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        } catch (const std::exception& ex) {
+            std::println("Unexpected exception: {}", ex.what());
+            res.status = StatusCode::InternalServerError_500;
+
+            json j = {
+                {"detail", "Internal server error."}
+            };
+            res.set_content(j.dump(), "application/json");
+            return;
+        }
 
         if (!exec_res) {
-            res.status = StatusCode::InternalServerError_500;
+            res.status = StatusCode::BadRequest_400;
 
             json j = {
                 {"detail", std::format("{}", exec_res.error())}
@@ -135,9 +154,6 @@ namespace api {
             res.set_content(j.dump(), "application/json");
             return;
         }
-
-        auto time_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start).count();
 
         u64 disk_reads = eng.file_mgr.get_read_counter() - reads_before;
         u64 disk_writes = eng.file_mgr.get_write_counter() - writes_before;

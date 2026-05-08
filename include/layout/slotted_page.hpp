@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include <cstring>
-#include <print>
 #include <span>
 #include <stdexcept>
 #include <utility>

@@ -53,20 +53,46 @@ catalog::AnyIndex* Table::get_index(const std::string& col_name) {
 
 std::expected<Rid, catalog::InsertionError> Table::insert(const Row& row) {
     // TODO: rebuild indices on seq_file rebuild
-    auto rid = seq_file.add(row);
-    if (!rid)
+    auto add_result = seq_file.add(row);
+    if (!add_result)
         return std::unexpected{catalog::DuplicatePrimaryKey{row.at(meta.pkey_col)}};
 
-    for (auto& [col_idx, index] : col_indices) {
-        if (auto* hash = std::get_if<HashIndex>(&index))
-            hash->add(TRY(val_to_hash_val(row[col_idx])), *rid);
-        else if (auto* btree = std::get_if<BTreeIndex>(&index))
-            btree->add(row[col_idx], *rid);
-        else
-            std::unreachable();
+    auto [rid, result] = *add_result;
+
+    if (result == SeqFile::InsertResult::REBUILD) {
+        auto cursor = seq_file.cursor();
+
+        for (auto& [col_idx, index] : col_indices) {
+            if (auto* hash = std::get_if<HashIndex>(&index)) {
+                hash->init();
+
+                while (auto data = cursor.next()) {
+                    auto [rid, row] = *data;
+                    hash->add(TRY(val_to_hash_val(row[col_idx])), rid);
+                }
+            } else if (auto* btree = std::get_if<BTreeIndex>(&index)) {
+                btree->init();
+
+                while (auto data = cursor.next()) {
+                    auto [rid, row] = *data;
+                    btree->add(row[col_idx], rid);
+                }
+            } else {
+                std::unreachable();
+            }
+        }
+    } else {
+        for (auto& [col_idx, index] : col_indices) {
+            if (auto* hash = std::get_if<HashIndex>(&index))
+                hash->add(TRY(val_to_hash_val(row[col_idx])), rid);
+            else if (auto* btree = std::get_if<BTreeIndex>(&index))
+                btree->add(row[col_idx], rid);
+            else
+                std::unreachable();
+        }
     }
 
-    return *rid;
+    return rid;
 }
 
 SeqFile::Cursor Table::cursor() {
@@ -113,7 +139,6 @@ namespace catalog {
         }
 
         FileId fid = eng.file_mgr.open_create(path);
-        eng.file_mgr.init_file(fid);
 
         {
             SeqFile seq_file{eng, fid};
@@ -154,6 +179,10 @@ namespace catalog {
         }
 
         return Table{seq_file, std::move(meta), std::move(col_nums), std::move(col_indices)};
+    }
+
+    bool Catalog::drop_table(const std::string& name) const {
+        return FileManager::remove(table_path(name));
     }
 
 }  // namespace catalog

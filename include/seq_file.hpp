@@ -115,6 +115,9 @@ struct pack::Unpack<SeqHeader> {
 };
 
 class SeqFile {
+public:
+    enum class InsertResult : u8;
+
 private:
     struct PageHeader {};
 
@@ -135,13 +138,18 @@ private:
     [[nodiscard]] std::optional<Rid> find_by_pkey_in_aux_page(const Value& pkey);
     [[nodiscard]] std::optional<Rid> find_rid_by_pkey_in_all_pages(const Value& pkey);
 
-    Rid insert_into_aux(const Row& row);
+    std::pair<Rid, InsertResult> insert_into_aux(const Row& row);
 
     static pnum_t calc_aux_pnum(const SeqHeader& file_hdr);
 
     void rebuild(SeqHeader& file_hdr);
 
 public:
+    enum class InsertResult : u8 {
+        NONE,
+        REBUILD,
+    };
+
     class Cursor {
     private:
         SeqFile& seq_file;
@@ -197,7 +205,7 @@ public:
     [[nodiscard]] Meta read_meta();
 
     [[nodiscard]] Row read_rid(Rid rid) const;
-    std::optional<Rid> add(const Row& row);
+    std::optional<std::pair<Rid, InsertResult>> add(const Row& row);
     [[nodiscard]] std::optional<Row> search(const Value& pkey);
     [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
     std::optional<Rid> remove(const Value& pkey);
