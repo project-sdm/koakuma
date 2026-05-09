@@ -8,7 +8,6 @@
 #include <variant>
 #include "engine/buffer_manager.hpp"
 #include "engine/file_manager.hpp"
-#include "file/seq_file.hpp"
 #include "types.hpp"
 
 ValueNotHashable::ValueNotHashable(Value val)
@@ -230,7 +229,6 @@ std::optional<Rid> HashIndex::Cursor::next() {
         assert(cur_slot <= page->slot_cnt());
 
         if (cur_slot == page->slot_cnt()) {
-            page = std::nullopt;
             cur_slot = 0;
 
             if (const auto* next = std::get_if<pnum_t>(&page->const_header_extra()))
@@ -238,6 +236,7 @@ std::optional<Rid> HashIndex::Cursor::next() {
             else
                 cur_pnum = PAGE_NIL;
 
+            page.reset();
             continue;
         }
 
