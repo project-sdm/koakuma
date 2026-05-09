@@ -17,11 +17,6 @@ namespace api {
         std::filesystem::path data_path;
     };
 
-    struct QueryResult {
-        std::vector<Column> columns;
-        std::vector<Row> rows;
-    };
-
     class RestServer {
     public:
         explicit RestServer(const ServerConfig& cfg = {});
