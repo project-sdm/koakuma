@@ -3,17 +3,17 @@
 #include <print>
 #include <string>
 #include "api/rest_server.hpp"
-#include "engine/file_manager.hpp"
 #include "util.hpp"
 
 int main() {
-    std::println(stderr, R"( _  __           _                          )");
-    std::println(stderr, R"(| |/ /___   __ _| | ___   _ _ __ ___   __ _ )");
-    std::println(stderr, R"(| ' // _ \ / _` | |/ / | | | '_ ` _ \ / _` |)");
-    std::println(stderr, R"(| . \ (_) | (_| |   <| |_| | | | | | | (_| |)");
-    std::println(stderr, R"(|_|\_\___/ \__,_|_|\_\\__,_|_| |_| |_|\__,_|)");
-    std::println(stderr);
-    std::println(stderr, "Page size: {}", PAGE_SIZE);
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::println(R"( _  __           _                          )");
+    std::println(R"(| |/ /___   __ _| | ___   _ _ __ ___   __ _ )");
+    std::println(R"(| ' // _ \ / _` | |/ / | | | '_ ` _ \ / _` |)");
+    std::println(R"(| . \ (_) | (_| |   <| |_| | | | | | | (_| |)");
+    std::println(R"(|_|\_\___/ \__,_|_|\_\\__,_|_| |_| |_|\__,_|)");
+    std::println();
+    std::println("Page size: {}", PAGE_SIZE);
 
     api::ServerConfig config{
         .host = util::getenv_or("KOAKUMA_HOST", "0.0.0.0"),

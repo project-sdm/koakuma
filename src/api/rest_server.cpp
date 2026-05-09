@@ -165,10 +165,10 @@ namespace api {
     }
 
     int RestServer::run() {
-        std::println(stderr, "Server listening on {}:{}", config.host, config.port);
+        std::println("Server listening on {}:{}", config.host, config.port);
 
         if (!server.listen(config.host, config.port)) {
-            std::println(stderr, "Failed to bind server to {}:{}", config.host, config.port);
+            std::println("Failed to bind server to {}:{}", config.host, config.port);
             return 1;
         }
 
