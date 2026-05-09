@@ -8,7 +8,7 @@
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 #include "util.hpp"
 
 // (actually a b+ tree)

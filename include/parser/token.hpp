@@ -78,11 +78,11 @@ enum class Symbol : u8 {
 };
 
 enum class DataType : u8 {
-    INT,
-    REAL,
-    BOOL,
-    VARCHAR,
-    POINT2D,
+    Int,
+    Real,
+    Bool,
+    VarChar,
+    Point2d,
 };
 
 struct Number {

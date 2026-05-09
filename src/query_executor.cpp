@@ -15,12 +15,11 @@
 #include <vector>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
-#include "index/btree.hpp"
+#include "file/seq_file.hpp"
 #include "index/hash.hpp"
 #include "parser/ast.hpp"
 #include "parser/token.hpp"
 #include "rapidcsv/rapidcsv.h"
-#include "seq_file.hpp"
 #include "util.hpp"
 
 UnexpectedType::UnexpectedType(parser::ExprLit lit, ColumnType expected_type)
@@ -43,31 +42,34 @@ FileNotFound::FileNotFound(std::filesystem::path path)
 InvalidIndexName::InvalidIndexName(std::string name)
     : name{std::move(name)} {}
 
+UnsupportedOperation::UnsupportedOperation(std::string col_name)
+    : col_name{std::move(col_name)} {}
+
 namespace {
     std::expected<Value, ExecutionError> lit2val(parser::ExprLit lit, ColumnType col_type) {
         switch (col_type) {
-            case ColumnType::INT:
+            case ColumnType::Int:
                 if (auto* x = std::get_if<f64>(&lit)) {
                     if (std::floor(*x) == *x)
                         return static_cast<int>(*x);
                 }
                 break;
-            case ColumnType::REAL:
+            case ColumnType::Real:
                 if (auto* x = std::get_if<f64>(&lit))
                     return *x;
 
                 break;
-            case ColumnType::VARCHAR:
+            case ColumnType::VarChar:
                 if (auto* s = std::get_if<std::string>(&lit))
                     return std::move(*s);
 
                 break;
-            case ColumnType::BOOL:
+            case ColumnType::Bool:
                 if (auto* b = std::get_if<bool>(&lit))
                     return *b;
 
                 break;
-            case ColumnType::POINT2D:
+            case ColumnType::Point2d:
                 if (auto* p = std::get_if<parser::Point2D>(&lit))
                     return Point<2>{p->x, p->y};
 
@@ -86,15 +88,15 @@ namespace {
 namespace volcano {
 
     template<typename T>
-    concept volcano_iterator = util::iter_of<T, Row>;
+    concept volcano_iterator = requires(T it) {
+        { it.next() } -> std::same_as<std::expected<std::optional<Row>, ExecutionError>>;
+    };
 
     class VolcanoIterator {
         class Contract;
 
     public:
-        using value_type = Row;
-
-        std::optional<value_type> next() {
+        std::expected<std::optional<Row>, ExecutionError> next() {
             return self->next();
         }
 
@@ -111,7 +113,7 @@ namespace volcano {
             Contract& operator=(const Contract&) = default;
             Contract& operator=(Contract&&) = delete;
 
-            virtual std::optional<Row> next() = 0;
+            virtual std::expected<std::optional<Row>, ExecutionError> next() = 0;
 
             virtual ~Contract() = default;
         };
@@ -119,7 +121,7 @@ namespace volcano {
         template<volcano_iterator It>
         class Wrapper final : public Contract {
         public:
-            std::optional<Row> next() override {
+            std::expected<std::optional<Row>, ExecutionError> next() override {
                 return iterator.next();
             }
 
@@ -136,14 +138,12 @@ namespace volcano {
     template<util::iter_of<std::pair<Rid, Row>> Iter>
     class SeqScan {
     public:
-        using value_type = Row;
-
-        std::optional<value_type> next() {
-            return TRY_OPT(it.next()).second;
-        }
-
         explicit SeqScan(Iter it)
             : it{std::move(it)} {}
+
+        std::expected<std::optional<Row>, ExecutionError> next() {
+            return TRY_OPT(it.next()).second;
+        }
 
     private:
         Iter it;
@@ -151,13 +151,11 @@ namespace volcano {
 
     class PKeyScan {
     public:
-        using value_type = Row;
-
         PKeyScan(SeqFile& seq_file, Value search_pkey)
             : seq_file{seq_file},
               search_pkey{std::move(search_pkey)} {}
 
-        std::optional<value_type> next() {
+        std::expected<std::optional<Row>, ExecutionError> next() {
             auto pkey = TRY_OPT(std::exchange(search_pkey, std::nullopt));
             return seq_file.search(pkey);
         }
@@ -172,13 +170,11 @@ namespace volcano {
     template<util::iter_of<Rid> Iter>
     class IndexScan {
     public:
-        using value_type = Row;
-
         explicit IndexScan(SeqFile& seq_file, Iter it)
             : seq_file{seq_file},
               it{std::move(it)} {}
 
-        std::optional<value_type> next() {
+        std::expected<std::optional<Row>, ExecutionError> next() {
             Rid rid = TRY_OPT(it.next());
             return seq_file.read_rid(rid);
         }
@@ -188,42 +184,8 @@ namespace volcano {
         Iter it;
     };
 
-    class FilterVisitor {
-    public:
-        FilterVisitor(ColumnType lhs_type, Value data)
-            : lhs_type{lhs_type},
-              data{std::move(data)} {}
-
-        std::expected<bool, ExecutionError> operator()(const parser::EqFilter& eq_filter) {
-            return data == TRY(lit2val(eq_filter.value, lhs_type));
-        }
-
-        std::expected<bool, ExecutionError> operator()(const parser::RangeFilter& range_filter) {
-            auto low = TRY(lit2val(range_filter.low, lhs_type));
-            auto high = TRY(lit2val(range_filter.high, lhs_type));
-
-            return low <= data && data <= high;
-        }
-
-        std::expected<bool, ExecutionError> operator()(
-            [[maybe_unused]] const parser::RadFilter& rad_filter) {
-            assert(false && "TODO: implement");
-        }
-
-        std::expected<bool, ExecutionError> operator()(
-            [[maybe_unused]] const parser::KFilter& k_filter) {
-            assert(false && "TODO: implement");
-        }
-
-    private:
-        ColumnType lhs_type;
-        Value data;
-    };
-
     class Filter {
     public:
-        using value_type = Row;
-
         Filter(VolcanoIterator child, parser::Filter filter, SeqFile::Meta meta)
             : child{std::move(child)},
               meta{std::move(meta)},
@@ -234,12 +196,34 @@ namespace volcano {
             }
         }
 
-        std::optional<Row> next() {
+        std::expected<std::optional<Row>, ExecutionError> next() {
             const auto& col = meta.columns.at(col_num);
 
-            while (auto row = child.next()) {
-                FilterVisitor visitor{col.type, row->at(col_num)};
-                if (std::visit(visitor, data))
+            while (auto row = TRY(child.next())) {
+                auto val = row->at(col_num);
+
+                bool cond = TRY(std::visit(
+                    util::overloaded{
+                        [&](const parser::EqFilter& eq_filter)
+                            -> std::expected<bool, ExecutionError> {
+                            return val == TRY(lit2val(eq_filter.value, col.type));
+                        },
+                        [&](const parser::RangeFilter& range_filter)
+                            -> std::expected<bool, ExecutionError> {
+                            auto low = TRY(lit2val(range_filter.low, col.type));
+                            auto high = TRY(lit2val(range_filter.high, col.type));
+
+                            return low <= val && val <= high;
+                        },
+                        [&](const parser::RadFilter&) -> std::expected<bool, ExecutionError> {
+                            return std::unexpected{UnsupportedOperation{col.name}};
+                        },
+                        [&](const parser::KFilter&) -> std::expected<bool, ExecutionError> {
+                            return std::unexpected{UnsupportedOperation{col.name}};
+                        }},
+                    data));
+
+                if (cond)
                     return row;
             }
 
@@ -261,16 +245,16 @@ namespace {
 
     ColumnType get_col_type(DataType col) {
         switch (col) {
-            case DataType::BOOL:
-                return ColumnType::BOOL;
-            case DataType::VARCHAR:
-                return ColumnType::VARCHAR;
-            case DataType::INT:
-                return ColumnType::INT;
-            case DataType::REAL:
-                return ColumnType::REAL;
-            case DataType::POINT2D:
-                return ColumnType::POINT2D;
+            case DataType::Bool:
+                return ColumnType::Bool;
+            case DataType::VarChar:
+                return ColumnType::VarChar;
+            case DataType::Int:
+                return ColumnType::Int;
+            case DataType::Real:
+                return ColumnType::Real;
+            case DataType::Point2d:
+                return ColumnType::Point2d;
         }
 
         std::unreachable();
@@ -316,6 +300,11 @@ std::expected<void, ExecutionError> QueryExecutor::exec(const catalog::Catalog& 
     return {};
 }
 
+QueryExecutor::Executor::Executor(Engine& eng, const catalog::Catalog& catalog, RowSink& sink)
+    : eng{eng},
+      catalog{catalog},
+      sink{sink} {}
+
 std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     const parser::CreateStatement& stmt) const {
     if (stmt.file_path && !std::filesystem::exists(*stmt.file_path))
@@ -336,11 +325,11 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
                 pkey_col = i;
             } else if (const auto* index = std::get_if<parser::Index>(&*col.constraint)) {
                 if (index->name == "hash")
-                    col_index = IndexType::HASH;
+                    col_index = IndexType::Hash;
                 else if (index->name == "btree")
-                    col_index = IndexType::BTREE;
+                    col_index = IndexType::BTree;
                 else if (index->name == "rtree")
-                    col_index = IndexType::RTREE;
+                    col_index = IndexType::RTree;
                 else
                     return std::unexpected{InvalidIndexName{index->name}};
             }
@@ -349,7 +338,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         columns.emplace_back(col.name, get_col_type(col.type), col_index);
     }
 
-    bool created = catalog.create_table(eng, stmt.table_name, columns, pkey_col);
+    bool created = TRY(catalog.create_table(eng, stmt.table_name, columns, pkey_col));
 
     if (!created) {
         if (!stmt.if_not_exists)
@@ -381,15 +370,15 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
 
                                    try {
                                        switch (col.type) {
-                                           case ColumnType::VARCHAR:
+                                           case ColumnType::VarChar:
                                                return doc.GetCell<std::string>(j, i);
-                                           case ColumnType::INT:
+                                           case ColumnType::Int:
                                                return doc.GetCell<int>(j, i);
-                                           case ColumnType::REAL:
+                                           case ColumnType::Real:
                                                return doc.GetCell<double>(j, i);
-                                           case ColumnType::BOOL:
+                                           case ColumnType::Bool:
                                                return doc.GetCell<bool>(j, i);
-                                           case ColumnType::POINT2D:
+                                           case ColumnType::Point2d:
                                                return doc.GetCell<Point<2>>(j, i);
                                        }
 
@@ -465,20 +454,20 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
                 return volcano::VolcanoIterator{std::move(scan)};
             }
 
-            if (auto* hash_index = std::get_if<HashIndex>(index)) {
+            if (auto* hash = std::get_if<HashIndex>(index)) {
                 std::println("using eq hash");
                 auto val = TRY(lit2val(eq_filter->value, col.type));
                 auto hash_val = TRY(val_to_hash_val(std::move(val)));
-                auto cursor = hash_index->search(hash_val);
+                auto cursor = hash->search(hash_val);
 
                 volcano::IndexScan scan{table.get_seq_file(), std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
 
-            if (auto* btree_index = std::get_if<BTreeIndex>(index)) {
+            if (auto* btree = std::get_if<BTreeIndex>(index)) {
                 std::println("using eq btree");
                 auto val = TRY(lit2val(eq_filter->value, col.type));
-                auto cursor = btree_index->search(val);
+                auto cursor = btree->search(val);
 
                 volcano::IndexScan scan{table.get_seq_file(), std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
@@ -486,14 +475,42 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
         }
 
         if (const auto* range_filter = std::get_if<parser::RangeFilter>(&filter.data)) {
-            if (auto* btree_index = std::get_if<BTreeIndex>(index)) {
+            if (auto* btree = std::get_if<BTreeIndex>(index)) {
                 std::println("using btree range");
 
                 auto low = TRY(lit2val(range_filter->low, col.type));
                 auto high = TRY(lit2val(range_filter->high, col.type));
 
                 auto& seq_file = table.get_seq_file();
-                auto cursor = btree_index->range_search(low, high);
+                auto cursor = btree->range_search(low, high);
+
+                volcano::IndexScan scan{seq_file, std::move(cursor)};
+                return volcano::VolcanoIterator{std::move(scan)};
+            }
+        }
+
+        if (const auto* rad_filter = std::get_if<parser::RadFilter>(&filter.data)) {
+            if (auto* rtree = std::get_if<RTreeIndex<2>>(index)) {
+                std::println("using rtree radius search");
+
+                Point<2> point{rad_filter->origin.x, rad_filter->origin.y};
+
+                auto& seq_file = table.get_seq_file();
+                auto cursor = rtree->range_search(point, rad_filter->radius);
+
+                volcano::IndexScan scan{seq_file, std::move(cursor)};
+                return volcano::VolcanoIterator{std::move(scan)};
+            }
+        }
+
+        if (const auto* k_filter = std::get_if<parser::KFilter>(&filter.data)) {
+            if (auto* rtree = std::get_if<RTreeIndex<2>>(index)) {
+                std::println("using rtree knn");
+
+                Point<2> point{k_filter->origin.x, k_filter->origin.y};
+
+                auto& seq_file = table.get_seq_file();
+                auto cursor = rtree->knn(point, k_filter->k);
 
                 volcano::IndexScan scan{seq_file, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
@@ -521,7 +538,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     if (stmt.filter)
         root = TRY(apply_filter(std::move(root), *table, *stmt.filter));
 
-    while (auto row = root.next())
+    while (auto row = TRY(root.next()))
         sink.on_row(*row);
 
     return {};

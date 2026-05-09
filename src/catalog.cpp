@@ -9,123 +9,126 @@
 #include "index/btree.hpp"
 #include "index/hash.hpp"
 #include "index/rtree.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 #include "util.hpp"
 
-catalog::DuplicatePrimaryKey::DuplicatePrimaryKey(Value pkey)
-    : pkey{std::move(pkey)} {}
+namespace catalog {
 
-using Table = catalog::Table;
+    IncompatibleColumnIndex::IncompatibleColumnIndex(IndexType index_type, ColumnType col_type)
+        : index_type{index_type},
+          col_type{col_type} {}
 
-Table::Table(SeqFile seq_file,
-             SeqFile::Meta meta,
-             std::unordered_map<std::string, std::size_t> col_nums,
-             std::unordered_map<std::size_t, AnyIndex> col_indices)
-    : seq_file{seq_file},
-      meta{std::move(meta)},
-      col_nums{std::move(col_nums)},
-      col_indices{std::move(col_indices)} {}
+    DuplicatePrimaryKey::DuplicatePrimaryKey(Value pkey)
+        : pkey{std::move(pkey)} {}
 
-const SeqFile::Meta& Table::get_meta() const {
-    return meta;
-}
+    Table::Table(SeqFile seq_file,
+                 SeqFile::Meta meta,
+                 std::unordered_map<std::string, std::size_t> col_nums,
+                 std::unordered_map<std::size_t, AnyIndex> col_indices)
+        : seq_file{seq_file},
+          meta{std::move(meta)},
+          col_nums{std::move(col_nums)},
+          col_indices{std::move(col_indices)} {}
 
-SeqFile& Table::get_seq_file() {
-    return seq_file;
-}
-
-std::size_t Table::col_num(const std::string& col_name) const {
-    return col_nums.at(col_name);
-}
-
-std::size_t Table::pkey_col_num() const {
-    return meta.pkey_col;
-}
-
-catalog::AnyIndex* Table::get_index(const std::string& col_name) {
-    auto num = col_nums.at(col_name);
-    auto it = col_indices.find(num);
-
-    if (it == col_indices.end())
-        return nullptr;
-
-    return &it->second;
-}
-
-std::expected<Rid, catalog::InsertionError> Table::insert(const Row& row) {
-    // TODO: rebuild indices on seq_file rebuild
-    auto add_result = seq_file.add(row);
-    if (!add_result)
-        return std::unexpected{catalog::DuplicatePrimaryKey{row.at(meta.pkey_col)}};
-
-    auto [rid, result] = *add_result;
-
-    if (result == SeqFile::InsertResult::REBUILD) {
-        auto cursor = seq_file.cursor();
-
-        for (auto& [col_idx, index] : col_indices) {
-            TRYV(std::visit(
-                util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
-                                     hash.init();
-
-                                     while (auto data = cursor.next()) {
-                                         auto [rid, row] = *data;
-                                         hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
-                                     }
-
-                                     return {};
-                                 },
-                                 [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
-                                     btree.init();
-
-                                     while (auto data = cursor.next()) {
-                                         auto [rid, row] = *data;
-                                         btree.add(row[col_idx], rid);
-                                     }
-
-                                     return {};
-                                 },
-                                 [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
-                                     rtree.init();
-
-                                     while (auto data = cursor.next()) {
-                                         auto [rid, row] = *data;
-                                         auto point = std::get<Point<2>>(row[col_idx]);
-                                         rtree.add(point, rid);
-                                     }
-
-                                     return {};
-                                 }},
-                index));
-        }
-    } else {
-        for (auto& [col_idx, index] : col_indices) {
-            TRYV(std::visit(
-                util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
-                                     hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
-                                     return {};
-                                 },
-                                 [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
-                                     btree.add(row[col_idx], rid);
-                                     return {};
-                                 },
-                                 [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
-                                     auto point = std::get<Point<2>>(row[col_idx]);
-                                     rtree.add(point, rid);
-                                     return {};
-                                 }},
-                index));
-        }
+    const SeqFile::Meta& Table::get_meta() const {
+        return meta;
     }
 
-    return rid;
-}
+    SeqFile& Table::get_seq_file() {
+        return seq_file;
+    }
 
-SeqFile::Cursor Table::cursor() {
-    return seq_file.cursor();
-}
+    std::size_t Table::col_num(const std::string& col_name) const {
+        return col_nums.at(col_name);
+    }
 
-namespace catalog {
+    std::size_t Table::pkey_col_num() const {
+        return meta.pkey_col;
+    }
+
+    catalog::AnyIndex* Table::get_index(const std::string& col_name) {
+        auto num = col_nums.at(col_name);
+        auto it = col_indices.find(num);
+
+        if (it == col_indices.end())
+            return nullptr;
+
+        return &it->second;
+    }
+
+    std::expected<Rid, catalog::InsertionError> Table::insert(const Row& row) {
+        auto add_result = seq_file.add(row);
+        if (!add_result)
+            return std::unexpected{catalog::DuplicatePrimaryKey{row.at(meta.pkey_col)}};
+
+        auto [rid, result] = *add_result;
+
+        if (result == SeqFile::InsertResult::Rebuild) {
+            auto cursor = seq_file.cursor();
+
+            for (auto& [col_idx, index] : col_indices) {
+                TRYV(std::visit(
+                    util::overloaded{
+                        [&](HashIndex& hash) -> std::expected<void, InsertionError> {
+                            hash.init();
+
+                            while (auto data = cursor.next()) {
+                                auto [rid, row] = *data;
+                                hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
+                            }
+
+                            return {};
+                        },
+                        [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
+                            btree.init();
+
+                            while (auto data = cursor.next()) {
+                                auto [rid, row] = *data;
+                                btree.add(row[col_idx], rid);
+                            }
+
+                            return {};
+                        },
+                        [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
+                            rtree.init();
+
+                            while (auto data = cursor.next()) {
+                                auto [rid, row] = *data;
+                                auto point = std::get<Point<2>>(row[col_idx]);
+                                rtree.add(point, rid);
+                            }
+
+                            return {};
+                        }},
+                    index));
+            }
+        } else {
+            for (auto& [col_idx, index] : col_indices) {
+                TRYV(std::visit(
+                    util::overloaded{
+                        [&](HashIndex& hash) -> std::expected<void, InsertionError> {
+                            hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
+                            return {};
+                        },
+                        [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
+                            btree.add(row[col_idx], rid);
+                            return {};
+                        },
+                        [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
+                            auto point = std::get<Point<2>>(row[col_idx]);
+                            rtree.add(point, rid);
+                            return {};
+                        }},
+                    index));
+            }
+        }
+
+        return rid;
+    }
+
+    SeqFile::Cursor Table::cursor() {
+        return seq_file.cursor();
+    }
 
     Catalog::Catalog(std::filesystem::path data_path)
         : data_path{std::move(data_path)} {
@@ -141,10 +144,10 @@ namespace catalog {
         return data_path / std::format("{}.{}.index.bin", table_name, col_name);
     }
 
-    [[nodiscard]] bool Catalog::create_table(Engine& eng,
-                                             const std::string& name,
-                                             std::vector<Column> columns,
-                                             std::size_t pkey_col) const {
+    std::expected<bool, CreateTableError> Catalog::create_table(Engine& eng,
+                                                                const std::string& name,
+                                                                std::vector<Column> columns,
+                                                                std::size_t pkey_col) const {
         assert(pkey_col < columns.size());
 
         auto path = table_path(name);
@@ -152,15 +155,23 @@ namespace catalog {
             return false;
 
         for (const auto& col : columns) {
+            if (col.index && *col.index == IndexType::RTree && col.type != ColumnType::Point2d) {
+                return std::unexpected{
+                    IncompatibleColumnIndex{*col.index, col.type}
+                };
+            }
+        }
+
+        for (const auto& col : columns) {
             if (col.index) {
                 switch (*col.index) {
-                    case IndexType::HASH:
+                    case IndexType::Hash:
                         create_index<HashIndex>(eng, name, col.name);
                         break;
-                    case IndexType::BTREE:
+                    case IndexType::BTree:
                         create_index<BTreeIndex>(eng, name, col.name);
                         break;
-                    case IndexType::RTREE:
+                    case IndexType::RTree:
                         create_index<RTreeIndex<2>>(eng, name, col.name);
                         break;
                 }
@@ -195,14 +206,15 @@ namespace catalog {
                 FileId fid = TRY_OPT(eng.file_mgr.open(index_path(table_name, col.name)));
 
                 switch (*col.index) {
-                    case IndexType::HASH:
+                    case IndexType::Hash:
                         col_indices.emplace(i, HashIndex{eng, fid});
                         break;
-                    case IndexType::BTREE:
+                    case IndexType::BTree:
                         col_indices.emplace(i, BTreeIndex{eng, fid});
                         break;
-                    default:
-                        std::unreachable();
+                    case IndexType::RTree:
+                        col_indices.emplace(i, RTreeIndex<2>{eng, fid});
+                        break;
                 }
             }
         }

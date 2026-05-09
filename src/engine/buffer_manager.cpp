@@ -2,7 +2,7 @@
 #include <cassert>
 #include <utility>
 #include "engine/file_manager.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 
 using PageGuard = BufferManager::PageGuard;
 

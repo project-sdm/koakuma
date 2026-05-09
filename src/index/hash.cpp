@@ -8,7 +8,7 @@
 #include <variant>
 #include "engine/buffer_manager.hpp"
 #include "engine/file_manager.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 #include "types.hpp"
 
 ValueNotHashable::ValueNotHashable(Value val)

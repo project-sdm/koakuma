@@ -215,7 +215,7 @@ namespace parser {
                 filter.data = RadFilter{origin, radius_tok.value};
             } else if (TRY(accept_val<Keyword::K>())) {
                 auto k_tok = TRY(expect_var<Number>());
-                filter.data = KFilter{origin, k_tok.value};
+                filter.data = KFilter{origin, static_cast<u64>(k_tok.value)};
             } else {
                 return std::unexpected{ParseError::UnexpectedToken};
             }

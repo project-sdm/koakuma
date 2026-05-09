@@ -63,9 +63,9 @@ namespace parser {
 
     struct KFilter {
         Point2D origin;
-        f64 k;
+        u64 k;
 
-        KFilter(Point2D origin, f64 k);
+        KFilter(Point2D origin, u64 k);
     };
 
     using FilterData = std::variant<EqFilter, RangeFilter, RadFilter, KFilter>;

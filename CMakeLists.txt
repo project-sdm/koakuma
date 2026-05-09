@@ -14,6 +14,8 @@ add_executable(koakuma
   src/engine/buffer_manager.cpp
   src/engine/engine.cpp
   src/engine/file_manager.cpp
+  src/file/common.cpp
+  src/file/seq_file.cpp
   src/index/btree.cpp
   src/index/hash.cpp
   src/index/rtree.cpp
@@ -25,7 +27,6 @@ add_executable(koakuma
   src/parser/lexer.cpp
   src/parser/parser.cpp
   src/query_executor.cpp
-  src/seq_file.cpp
   src/util.cpp
 )
 

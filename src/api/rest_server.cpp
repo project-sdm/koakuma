@@ -14,7 +14,7 @@
 #include "magic_enum/magic_enum.hpp"
 #include "parser/parser.hpp"
 #include "query_executor.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 
 using nlohmann::json;
 
@@ -100,7 +100,6 @@ namespace api {
         auto parsed = parser.source_file();
 
         if (!parsed) {
-            // TODO: use
             res.status = StatusCode::BadRequest_400;
             json j = {
                 {"detail", std::format("{}", parsed.error())}

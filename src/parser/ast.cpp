@@ -45,7 +45,7 @@ namespace parser {
         : origin{origin},
           radius{radius} {}
 
-    KFilter::KFilter(Point2D origin, f64 k)
+    KFilter::KFilter(Point2D origin, u64 k)
         : origin{origin},
           k{k} {}
 

@@ -1,14 +1,16 @@
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
 #include <optional>
+#include <print>
 #include <stdexcept>
 #include <utility>
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
+#include "file/common.hpp"
 #include "util.hpp"
 
 Rid::Rid() = default;
@@ -30,8 +32,7 @@ SeqFile::SlotExtra::SlotExtra(bool active)
     : active{active} {}
 
 SeqHeader::SeqHeader(std::vector<Column> columns, u32 pkey_col)
-    : columns{std::move(columns)},
-      pkey_col{pkey_col} {}
+    : UnknownFile::Header{FileType::Seq, std::move(columns), pkey_col} {}
 
 SeqFile::SeqFile(Engine& engine, FileId fid)
     : eng{engine},
@@ -252,16 +253,17 @@ std::pair<Rid, SeqFile::InsertResult> SeqFile::insert_into_aux(const Row& row) {
 
         if (aux_page.will_fit(row)) {
             aux_page.push_back(SlotExtra{true}, row);
-            return std::make_pair(Rid{aux_pnum, new_slot_idx}, InsertResult::NONE);
+            return std::make_pair(Rid{aux_pnum, new_slot_idx}, InsertResult::None);
         }
     }
 
+    std::println("rebuild at inserting {}", row);
     rebuild(file_hdr);
 
     auto [rid, sub_result] = insert_into_aux(row);
-    assert(sub_result == InsertResult::NONE);
+    assert(sub_result == InsertResult::None);
 
-    return std::make_pair(rid, InsertResult::REBUILD);
+    return std::make_pair(rid, InsertResult::Rebuild);
 }
 
 std::optional<Rid> SeqFile::remove(const Value& pkey) {

@@ -5,7 +5,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -21,8 +20,8 @@
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
+#include "file/common.hpp"
 #include "layout/record_page.hpp"
-#include "seq_file.hpp"
 #include "types.hpp"
 #include "util.hpp"
 
@@ -137,7 +136,7 @@ private:
         return best;
     }
 
-    enum class Group : std::int8_t {
+    enum class Group : i8 {
         Unassigned = -1,
         A = 0,
         B = 1
@@ -404,6 +403,77 @@ public:
 
     static_assert(util::iter_of<Cursor, Rid>);
 
+    class RadiusCursor {
+    public:
+        using value_type = Rid;
+
+        RadiusCursor(FileId fid,
+                     BufferManager& buf_mgr,
+                     Point<N> point,
+                     f64 radius,
+                     pnum_t root_pnum)
+            : fid{fid},
+              buf_mgr{buf_mgr},
+              radius_sq{radius * radius} {
+            for (std::size_t i = 0; i < N; ++i) {
+                search_rect.min[i] = point[i] - radius;
+                search_rect.max[i] = point[i] + radius;
+            }
+
+            q.push(root_pnum);
+        }
+
+        std::optional<value_type> next() {
+            while (out_buf.empty() && !q.empty()) {
+                auto pnum = q.front();
+                q.pop();
+
+                NodePage page{buf_mgr.fetch_page(fid, pnum)};
+
+                for (u32 i = 0; i < page.count(); ++i) {
+                    auto rec = page.read(i);
+
+                    if (!rec.rect.intersects(search_rect))
+                        continue;
+
+                    if (const auto* child_pnum = std::get_if<pnum_t>(&rec.var)) {
+                        q.push(*child_pnum);
+                        continue;
+                    }
+
+                    f64 dist_sq = 0;
+
+                    for (std::size_t d = 0; d < N; ++d) {
+                        f64 v = point[d];
+                        f64 diff = v < rec.rect.min[d] ? rec.rect.min[d] - v : v - rec.rect.max[d];
+                        dist_sq += diff * diff;
+                    }
+
+                    if (dist_sq <= radius_sq)
+                        out_buf.push_back(std::get<Rid>(rec.var));
+                }
+            }
+
+            if (out_buf.empty())
+                return std::nullopt;
+
+            Rid rid = out_buf.back();
+            out_buf.pop_back();
+            return rid;
+        }
+
+    private:
+        FileId fid;
+        BufferManager& buf_mgr;
+        std::queue<pnum_t> q;
+        Rect<N> search_rect;
+        Point<N> point;
+        f64 radius_sq;
+        std::vector<Rid> out_buf;
+    };
+
+    static_assert(util::iter_of<RadiusCursor, Rid>);
+
     class KnnCursor {
     public:
         using value_type = Rid;
@@ -596,7 +666,10 @@ public:
         return Cursor{fid, eng.buf_mgr, std::move(rect), file_hdr.root};
     }
 
-    void range_search(const Point<N>& center, f64 radius);
+    [[nodiscard]] RadiusCursor range_search(Point<N> point, f64 radius) {
+        auto file_hdr = eng.file_mgr.read_user_header<RTreeHeader>(fid);
+        return RadiusCursor{fid, eng.buf_mgr, std::move(point), radius, file_hdr.root};
+    }
 
     [[nodiscard]] KnnCursor knn(const Point<N>& center, u64 k) {
         Rect<N> query{center, center};
@@ -687,63 +760,6 @@ private:
 
         return false;
     }
-
-    // std::vector<T> radius_search(const std::array<Coord, N>& point, Coord radius) const {
-    //     std::vector<T> results;
-    //
-    //     if (!root) {
-    //         return results;
-    //     }
-    //
-    //     Rect<Coord, N> search_rect;
-    //
-    //     for (std::size_t i = 0; i < N; ++i) {
-    //         search_rect.min[i] = point[i] - radius;
-    //         search_rect.max[i] = point[i] + radius;
-    //     }
-    //
-    //     radius_search_recursive(root.get(), point, radius * radius, search_rect, results);
-    //
-    //     return results;
-    // }
-    //
-    // void radius_search_recursive(const Node* node,
-    //                              const std::array<Coord, N>& point,
-    //                              Coord radius_sq,
-    //                              const Rect<Coord, N>& search_rect,
-    //                              std::vector<T>& results) const {
-    //     for (std::size_t i = 0; i < node->count; ++i) {
-    //         const auto& branch = node->branches[i];
-    //
-    //         if (!branch.rect.intersects(search_rect)) {
-    //             continue;
-    //         }
-    //
-    //         if (std::holds_alternative<T>(branch.data)) {
-    //             Coord dist_sq = 0;
-    //
-    //             for (std::size_t d = 0; d < N; ++d) {
-    //                 Coord v = point[d];
-    //
-    //                 if (v < branch.rect.min[d]) {
-    //                     Coord diff = branch.rect.min[d] - v;
-    //                     dist_sq += diff * diff;
-    //                 } else if (v > branch.rect.max[d]) {
-    //                     Coord diff = v - branch.rect.max[d];
-    //                     dist_sq += diff * diff;
-    //                 }
-    //             }
-    //
-    //             if (dist_sq <= radius_sq) {
-    //                 results.push_back(branch.value());
-    //             }
-    //
-    //         } else {
-    //             radius_search_recursive(branch.child().get(), point, radius_sq, search_rect,
-    //                                     results);
-    //         }
-    //     }
-    // }
 
 public:
     RTree() = default;

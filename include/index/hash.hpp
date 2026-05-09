@@ -9,7 +9,7 @@
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
 #include "pack.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 #include "types.hpp"
 #include "util.hpp"
 

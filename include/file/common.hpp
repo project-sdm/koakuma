@@ -1,0 +1,131 @@
+#ifndef FILE_COMMON_HPP
+#define FILE_COMMON_HPP
+
+#include <array>
+#include <string>
+#include <variant>
+#include "engine/file_manager.hpp"
+#include "types.hpp"
+
+static constexpr pnum_t PAGE_NIL = -1;
+
+struct Rid {
+    pnum_t pnum = PAGE_NIL;
+    u32 slot_idx = 0;
+
+    Rid();
+    Rid(pnum_t pnum, u32 slot_idx);
+
+    bool operator==(const Rid& other) const;
+    bool operator<(const Rid& other) const;
+};
+
+enum class ColumnType : u8 {
+    Int,
+    Bool,
+    Real,
+    VarChar,
+    Point2d,
+};
+
+enum class IndexType : u8 {
+    Hash,
+    BTree,
+    RTree,
+};
+
+enum class FileType : u8 {
+    Seq,
+    BTree,
+};
+
+struct Column {
+    std::string name;
+    ColumnType type{};
+    std::optional<IndexType> index;
+
+    Column();
+    Column(std::string name, ColumnType type, std::optional<IndexType> index);
+};
+
+template<>
+struct pack::PackSize<Column> {
+    std::size_t operator()(const Column& col) const {
+        return pack_size<>(col.name) + pack_size<>(col.type) + pack_size<>(col.index);
+    }
+};
+
+template<>
+struct pack::Pack<Column> {
+    void operator()(const Column& col, u8*& dest) const {
+        pack<>(col.name, dest);
+        pack<>(col.type, dest);
+        pack<>(col.index, dest);
+    }
+};
+
+template<>
+struct pack::Unpack<Column> {
+    void operator()(Column& dest, const u8*& src) const {
+        unpack<>(dest.name, src);
+        unpack<>(dest.type, src);
+        unpack<>(dest.index, src);
+    }
+};
+
+template<>
+struct pack::PackSize<Rid> {
+    std::size_t operator()(const Rid& rid) const {
+        return pack_size<>(rid.pnum) + pack_size<>(rid.slot_idx);
+    }
+};
+
+template<>
+struct pack::Pack<Rid> {
+    void operator()(const Rid& rid, u8*& dest) const {
+        pack<>(rid.pnum, dest);
+        pack<>(rid.slot_idx, dest);
+    }
+};
+
+template<>
+struct pack::Unpack<Rid> {
+    void operator()(Rid& dest, const u8*& src) const {
+        unpack<>(dest.pnum, src);
+        unpack<>(dest.slot_idx, src);
+    }
+};
+
+template<std::size_t N>
+using Point = std::array<f64, N>;
+
+using Value = std::variant<int, bool, f64, std::string, Point<2>>;
+using Row = std::vector<Value>;
+
+class UnknownFile {
+public:
+    struct Header {
+        FileType file_type{};
+        std::vector<Column> columns;
+        u32 pkey_col = -1;
+
+        Header();
+        Header(FileType file_type, std::vector<Column> columns, u32 pkey_col);
+    };
+};
+
+// class File {
+// private:
+//     std::variant<SeqFile> file;
+//
+// public:
+//
+//     [[nodiscard]] Row read_rid(Rid rid) const;
+//     // std::optional<std::pair<Rid, InsertResult>> add(const Row& row);
+//     [[nodiscard]] std::optional<Row> search(const Value& pkey);
+//     // [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
+//     std::optional<Rid> remove(const Value& pkey);
+//
+// };
+
+#endif

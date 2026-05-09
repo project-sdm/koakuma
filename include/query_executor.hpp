@@ -8,7 +8,7 @@
 #include "engine/engine.hpp"
 #include "magic_enum/magic_enum.hpp"
 #include "parser/ast.hpp"
-#include "seq_file.hpp"
+#include "file/seq_file.hpp"
 
 namespace volcano {
 
@@ -56,14 +56,22 @@ struct InvalidCsvCell {
     InvalidCsvCell(std::string text, ColumnType expected_type);
 };
 
+struct UnsupportedOperation {
+    std::string col_name;
+
+    explicit UnsupportedOperation(std::string col_name);
+};
+
 using ExecutionError = std::variant<catalog::InsertionError,
+                                    catalog::CreateTableError,
                                     UnexpectedType,
                                     TableNotFound,
                                     TableAlreadyExists,
                                     InvalidCsvSchema,
                                     InvalidCsvCell,
                                     FileNotFound,
-                                    InvalidIndexName>;
+                                    InvalidIndexName,
+                                    UnsupportedOperation>;
 
 class QueryExecutor {
 public:
@@ -84,6 +92,8 @@ private:
         Engine& eng;
         const catalog::Catalog& catalog;
         RowSink& sink;
+
+        Executor(Engine& eng, const catalog::Catalog& catalog, RowSink& sink);
 
         std::expected<void, ExecutionError> operator()(const parser::CreateStatement& stmt) const;
         std::expected<void, ExecutionError> operator()(const parser::SelectStatement& stmt);
@@ -176,6 +186,18 @@ struct std::formatter<InvalidIndexName, char> {
 
     static auto format(const InvalidIndexName& err, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Invalid index: '{}'", err.name);
+    }
+};
+
+template<>
+struct std::formatter<UnsupportedOperation, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const UnsupportedOperation& err, std::format_context& ctx) {
+        return std::format_to(
+            ctx.out(), "Unsupported operation on column '{}' without proper index.", err.col_name);
     }
 };
 

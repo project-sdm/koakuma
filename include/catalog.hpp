@@ -8,12 +8,22 @@
 #include <unordered_map>
 #include <variant>
 #include "engine/engine.hpp"
+#include "file/seq_file.hpp"
 #include "index/btree.hpp"
 #include "index/hash.hpp"
 #include "index/rtree.hpp"
-#include "seq_file.hpp"
+#include "magic_enum/magic_enum.hpp"
 
 namespace catalog {
+    struct IncompatibleColumnIndex {
+        IndexType index_type;
+        ColumnType col_type;
+
+        IncompatibleColumnIndex(IndexType index_type, ColumnType col_type);
+    };
+
+    using CreateTableError = std::variant<IncompatibleColumnIndex>;
+
     using AnyIndex = std::variant<BTreeIndex, HashIndex, RTreeIndex<2>>;
 
     struct DuplicatePrimaryKey {
@@ -67,10 +77,10 @@ namespace catalog {
         [[nodiscard]] std::filesystem::path table_path(const std::string& name) const;
         [[nodiscard]] std::optional<Table> get_table(Engine& eng, const std::string& name) const;
 
-        [[nodiscard]] bool create_table(Engine& eng,
-                                        const std::string& name,
-                                        std::vector<Column> columns,
-                                        std::size_t pkey_col) const;
+        std::expected<bool, CreateTableError> create_table(Engine& eng,
+                                                           const std::string& name,
+                                                           std::vector<Column> columns,
+                                                           std::size_t pkey_col) const;
 
         [[nodiscard]] bool drop_table(const std::string& name) const;
     };
@@ -94,6 +104,19 @@ namespace catalog {
 }  // namespace catalog
 
 template<>
+struct std::formatter<catalog::IncompatibleColumnIndex, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const catalog::IncompatibleColumnIndex& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "Index '{}' cannot be used on column of type '{}'.",
+                              magic_enum::enum_name(err.index_type),
+                              magic_enum::enum_name(err.col_type));
+    }
+};
+
+template<>
 struct std::formatter<catalog::DuplicatePrimaryKey, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
@@ -111,6 +134,17 @@ struct std::formatter<catalog::InsertionError, char> {
     }
 
     static auto format(const catalog::InsertionError& err, std::format_context& ctx) {
+        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, err);
+    }
+};
+
+template<>
+struct std::formatter<catalog::CreateTableError, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const catalog::CreateTableError& err, std::format_context& ctx) {
         return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, err);
     }
 };

@@ -5,10 +5,8 @@
 #include <cstdio>
 #include <format>
 #include <optional>
-#include <string>
-#include <utility>
-#include <variant>
 #include <vector>
+#include "common.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
 #include "layout/slotted_page.hpp"
@@ -16,99 +14,7 @@
 #include "types.hpp"
 #include "util.hpp"
 
-static constexpr pnum_t PAGE_NIL = -1;
-
-struct Rid {
-    pnum_t pnum = PAGE_NIL;
-    u32 slot_idx = 0;
-
-    Rid();
-    Rid(pnum_t pnum, u32 slot_idx);
-
-    bool operator==(const Rid& other) const;
-    bool operator<(const Rid& other) const;
-};
-
-template<>
-struct pack::PackSize<Rid> {
-    std::size_t operator()(const Rid& rid) const {
-        return pack_size<>(rid.pnum) + pack_size<>(rid.slot_idx);
-    }
-};
-
-template<>
-struct pack::Pack<Rid> {
-    void operator()(const Rid& rid, u8*& dest) const {
-        pack<>(rid.pnum, dest);
-        pack<>(rid.slot_idx, dest);
-    }
-};
-
-template<>
-struct pack::Unpack<Rid> {
-    void operator()(Rid& dest, const u8*& src) const {
-        unpack<>(dest.pnum, src);
-        unpack<>(dest.slot_idx, src);
-    }
-};
-
-template<std::size_t N>
-using Point = std::array<f64, N>;
-
-using Value = std::variant<int, bool, f64, std::string, Point<2>>;
-using Row = std::vector<Value>;
-
-enum class ColumnType : u8 {
-    INT,
-    BOOL,
-    REAL,
-    VARCHAR,
-    POINT2D,
-};
-
-enum class IndexType : u8 {
-    HASH,
-    BTREE,
-    RTREE,
-};
-
-struct Column {
-    std::string name;
-    ColumnType type{};
-    std::optional<IndexType> index;
-
-    Column();
-    Column(std::string name, ColumnType type, std::optional<IndexType> index);
-};
-
-template<>
-struct pack::PackSize<Column> {
-    std::size_t operator()(const Column& col) const {
-        return pack_size<>(col.name) + pack_size<>(col.type) + pack_size<>(col.index);
-    }
-};
-
-template<>
-struct pack::Pack<Column> {
-    void operator()(const Column& col, u8*& dest) const {
-        pack<>(col.name, dest);
-        pack<>(col.type, dest);
-        pack<>(col.index, dest);
-    }
-};
-
-template<>
-struct pack::Unpack<Column> {
-    void operator()(Column& dest, const u8*& src) const {
-        unpack<>(dest.name, src);
-        unpack<>(dest.type, src);
-        unpack<>(dest.index, src);
-    }
-};
-
-struct SeqHeader {
-    std::vector<Column> columns;
-    u32 pkey_col = -1;
+struct SeqHeader : public UnknownFile::Header {
     pnum_t main_pages = 0;
 
     SeqHeader() = default;
@@ -172,8 +78,8 @@ private:
 
 public:
     enum class InsertResult : u8 {
-        NONE,
-        REBUILD,
+        None,
+        Rebuild,
     };
 
     class Cursor {
