@@ -1,0 +1,10 @@
+services:
+  koakuma:
+    image: "grazen/koakuma"
+    ports:
+      - "8080:8080"
+
+  koakuma-frontend:
+    image: "grazen/koakuma-frontend"
+    ports:
+      - "3000:3000"
