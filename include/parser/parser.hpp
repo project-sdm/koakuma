@@ -47,7 +47,7 @@ namespace parser {
     std::expected<bool, CompileError> Parser::accept_val() {
         using T = decltype(value);
 
-        auto t = TRY(tokens.peek()->get());
+        auto t = TRY_COPY(tokens.peek()->get());
         auto* tok = t.get_if<T>();
 
         if (tok && *tok == value) {
@@ -61,12 +61,9 @@ namespace parser {
 
     template<typename T>
     std::expected<std::optional<T>, CompileError> Parser::accept_var() {
-        auto& t = tokens.peek()->get();
+        auto t = TRY_COPY(tokens.peek()->get());
 
-        if (!t)
-            return std::unexpected{t.error()};
-
-        if (t->get_if<T>()) {
+        if (t.get_if<T>()) {
             auto res = tokens.next();
             return (*res)->get<T>();
         }

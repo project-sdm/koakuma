@@ -29,6 +29,14 @@
                                                  \
         std::move(*res);                         \
     })
+#define TRY_COPY(expr)                           \
+    ({                                           \
+        auto&& res = (expr);                     \
+        if (!res)                                \
+            return std::unexpected(res.error()); \
+                                                 \
+        (*res);                                  \
+    })
 
 #define TRYV(expr)                               \
     ({                                           \
