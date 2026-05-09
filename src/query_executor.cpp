@@ -531,6 +531,7 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
         }
     }
 
+    sink.on_message("Using sequential scan with filter.");
     return volcano::VolcanoIterator{
         volcano::Filter{std::move(iter), filter, std::move(meta)}
     };
