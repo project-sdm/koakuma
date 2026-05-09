@@ -4,9 +4,11 @@ services:
     image: "grazen/koakuma"
     ports:
       - "8080:8080"
+    restart: "unless-stopped"
 
   koakuma-frontend:
     container_name: "koakuma-frontend"
     image: "grazen/koakuma-frontend"
     ports:
       - "3000:3000"
+    restart: "unless-stopped"
