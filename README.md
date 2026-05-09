@@ -8,7 +8,7 @@ El proyecto y su [frontend](https://github.com/project-sdm/koakuma-frontend) se
 pueden levantar rápidamente usando Docker Compose:
 
 ```bash
-docke compose up
+docker compose up
 ```
 
 Por defecto, esto levantará el DBMS en el puerto **8080** y el frontend en el puerto **3000**.
