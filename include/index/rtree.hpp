@@ -536,6 +536,51 @@ public:
 
     static_assert(util::iter_of<KnnCursor, Rid>);
 
+    class RectCursor {
+    public:
+        using value_type = std::pair<u64, Rect<N>>;
+
+        explicit RectCursor(FileId fid, BufferManager& buf_mgr, pnum_t root)
+            : fid{fid},
+              buf_mgr{buf_mgr} {
+            q.push(root);
+        }
+
+        std::optional<value_type> next() {
+            while (out_buf.empty() && !q.empty()) {
+                auto pnum = q.front();
+                q.pop();
+
+                NodePage page{buf_mgr.fetch_page(fid, pnum)};
+                u64 level = page.const_header_extra().level;
+
+                for (u32 i = 0; i < page.count(); ++i) {
+                    auto rec = page.read(i);
+                    out_buf.emplace_back(level, rec.rect);
+
+                    if (const auto* child_pnum = std::get_if<pnum_t>(&rec.var))
+                        q.push(*child_pnum);
+                }
+            }
+
+            if (out_buf.empty())
+                return std::nullopt;
+
+            auto out = std::move(out_buf.back());
+            out_buf.pop_back();
+            return out;
+        }
+
+    private:
+        FileId fid;
+        BufferManager& buf_mgr;
+        std::optional<NodePage> page;
+        std::queue<pnum_t> q;
+        std::vector<value_type> out_buf;
+    };
+
+    static_assert(util::iter<RectCursor>);
+
     RTreeIndex(Engine& engine, FileId fid)
         : eng{engine},
           fid{fid} {}
@@ -675,6 +720,11 @@ public:
         Rect<N> query{center, center};
         auto file_hdr = eng.file_mgr.read_user_header<RTreeHeader>(fid);
         return KnnCursor{fid, eng.buf_mgr, std::move(query), k, file_hdr.root};
+    }
+
+    [[nodiscard]] RectCursor rect_cursor() {
+        auto file_hdr = eng.file_mgr.read_user_header<RTreeHeader>(fid);
+        return RectCursor{fid, eng.buf_mgr, file_hdr.root};
     }
 };
 

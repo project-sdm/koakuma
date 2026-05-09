@@ -3,14 +3,17 @@
 #include <exception>
 #include <expected>
 #include <format>
+#include <optional>
 #include <print>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
-#include "file/seq_file.hpp"
+#include "file/common.hpp"
 #include "httplib/httplib.h"
+#include "index/rtree.hpp"
 #include "json/json.hpp"
 #include "magic_enum/magic_enum.hpp"
 #include "parser/parser.hpp"
@@ -26,7 +29,22 @@ namespace std {
         std::visit([&](const auto& val) { j = val; }, var);
     }
 
+    template<typename T>
+    void to_json(json& j, const optional<T>& var) {  // NOLINT(misc-use-internal-linkage)
+        if (var.has_value())
+            j = var.value();
+        else
+            j = nullptr;
+    }
+
 }  // namespace std
+
+void to_json(json& j, const Rect<2>& rect) {  // NOLINT(misc-use-internal-linkage)
+    j = json{
+        {"min", rect.min},
+        {"max", rect.max},
+    };
+}
 
 void to_json(json& j, const Column& col) {  // NOLINT(misc-use-internal-linkage)
     j = json{
@@ -36,15 +54,41 @@ void to_json(json& j, const Column& col) {  // NOLINT(misc-use-internal-linkage)
 }
 
 struct QueryResult {
-    std::vector<Column> columns;
-    std::vector<Row> rows;
+    struct Table {
+        std::vector<Column> columns;
+        std::vector<Row> rows;
+
+        explicit Table(std::vector<Column> columns)
+            : columns{std::move(columns)} {}
+    };
+
+    struct Plane {
+        std::vector<std::pair<u64, Rect<2>>> rects;
+    };
+
+    std::optional<Table> table;
+    std::optional<Plane> plane;
+    std::vector<std::string> warnings;
 };
 
-void to_json(json& j,  // NOLINT(misc-use-internal-linkage)
-             const QueryResult& result) {
+void to_json(json& j, const QueryResult::Table& table) {  // NOLINT(misc-use-internal-linkage)
     j = json{
-        {"columns", result.columns},
-        {   "rows",    result.rows},
+        {"columns", table.columns},
+        {   "rows",    table.rows},
+    };
+}
+
+void to_json(json& j, const QueryResult::Plane& plane) {  // NOLINT(misc-use-internal-linkage)
+    j = json{
+        {"rects", plane.rects},
+    };
+}
+
+void to_json(json& j, const QueryResult& result) {  // NOLINT(misc-use-internal-linkage)
+    j = json{
+        {   "table",    result.table},
+        {   "plane",    result.plane},
+        {"warnings", result.warnings}
     };
 }
 
@@ -52,12 +96,28 @@ namespace {
 
     class AccumulatorSink : public QueryExecutor::RowSink {
     public:
-        void on_columns(const std::vector<Column>& columns) override {
-            results.emplace_back(columns);
+        void on_begin() override {
+            results.emplace_back();
+        }
+
+        void on_table(const std::vector<Column>& columns) override {
+            results.back().table = QueryResult::Table{columns};
         }
 
         void on_row(const Row& row) override {
-            results.back().rows.push_back(row);
+            results.back().table->rows.push_back(row);
+        }
+
+        void on_plane() override {
+            results.back().plane = QueryResult::Plane{};
+        }
+
+        void on_rect(u64 level, const Rect<2>& rect) override {
+            results.back().plane->rects.emplace_back(level, rect);
+        }
+
+        void on_warning(const std::string& warning) override {
+            results.back().warnings.push_back(warning);
         }
 
         [[nodiscard]] const std::vector<QueryResult>& get_results() const {
@@ -75,7 +135,7 @@ namespace {
 namespace api {
 
     void RestServer::setup_routes() {
-        server.Post("/", [](const httplib::Request&, httplib::Response& res) {
+        server.Get("/", [](const httplib::Request&, httplib::Response& res) {
             res.set_header("Access-Control-Allow-Origin", "*");
 
             json j = {

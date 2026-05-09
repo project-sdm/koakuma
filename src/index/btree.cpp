@@ -429,11 +429,6 @@ bool BTreeIndex::remove(const Value& key) {
                         to_free = inner_pnum;
                         inner_merge_with_next(par_page, par_idx - 1);
                     } else {
-                        for (u32 i = 0; i < par_page.slot_cnt(); ++i)
-                            std::print("{} ", par_page.read_data(i));
-                        std::println();
-                        std::println();
-
                         to_free = child_pnum(par_page, par_idx + 1);
                         inner_merge_with_next(par_page, par_idx);
                     }

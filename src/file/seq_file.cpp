@@ -257,7 +257,6 @@ std::pair<Rid, SeqFile::InsertResult> SeqFile::insert_into_aux(const Row& row) {
         }
     }
 
-    std::println("rebuild at inserting {}", row);
     rebuild(file_hdr);
 
     auto [rid, sub_result] = insert_into_aux(row);

@@ -6,7 +6,7 @@
 #include <variant>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
-#include "file/seq_file.hpp"
+#include "index/rtree.hpp"
 #include "magic_enum/magic_enum.hpp"
 #include "parser/ast.hpp"
 
@@ -84,8 +84,16 @@ using ExecutionError = std::variant<catalog::InsertionError,
 class QueryExecutor {
 public:
     struct RowSink {
-        virtual void on_columns(const std::vector<Column>& columns) = 0;
+        virtual void on_begin() = 0;
+
+        virtual void on_table(const std::vector<Column>& columns) = 0;
         virtual void on_row(const Row& row) = 0;
+
+        virtual void on_plane() = 0;
+        virtual void on_rect(u64 level, const Rect<2>& rect) = 0;
+
+        virtual void on_warning(const std::string& warning) = 0;
+
         virtual ~RowSink() = default;
     };
 

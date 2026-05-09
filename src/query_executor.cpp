@@ -13,6 +13,7 @@
 #include <vector>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
+#include "file/common.hpp"
 #include "file/seq_file.hpp"
 #include "index/hash.hpp"
 #include "parser/ast.hpp"
@@ -295,6 +296,7 @@ std::expected<void, ExecutionError> QueryExecutor::exec(const catalog::Catalog& 
     Executor executor{engine, catalog, sink};
 
     for (const auto& stmt : source_file.statements) {
+        sink.on_begin();
         TRYV(std::visit(executor, stmt));
         std::println();
     }
@@ -346,7 +348,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         if (!stmt.if_not_exists)
             return std::unexpected{TableAlreadyExists{stmt.table_name}};
 
-        std::println("Warning: {}", TableAlreadyExists{stmt.table_name});
+        sink.on_warning(std::format("{}", TableAlreadyExists{stmt.table_name}));
         return {};
     }
 
@@ -412,7 +414,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         if (!stmt.if_exists)
             return std::unexpected{TableNotFound{stmt.table_name}};
 
-        std::println("Warning: {}", TableNotFound{stmt.table_name});
+        sink.on_warning(std::format("{}", TableNotFound{stmt.table_name}));
         return {};
     }
 
@@ -533,7 +535,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         return std::unexpected{TableNotFound{stmt.table_name}};
 
     const auto& cols = table->get_meta().columns;
-    sink.on_columns(cols);
+    sink.on_table(cols);
 
     volcano::VolcanoIterator root{volcano::SeqScan{table->cursor()}};
 
@@ -583,29 +585,27 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         return std::unexpected{TableNotFound{stmt.table_name}};
 
     const auto& cols = table->get_meta().columns;
-    for (const auto& col : cols)
-        if (col.name == stmt.col_name)
-            goto skip;
-    return std::unexpected{
-        ColumnNotFound{stmt.table_name, stmt.col_name}
-    };
-skip:
 
-    if (auto* index = table->get_index(stmt.col_name))
+    if (!std::ranges::any_of(cols, [&](auto& col) { return col.name == stmt.col_name; })) {
+        return std::unexpected{
+            ColumnNotFound{stmt.table_name, stmt.col_name}
+        };
+    }
+
+    if (auto* index = table->get_index(stmt.col_name)) {
         if (auto* rtree = std::get_if<RTreeIndex<2>>(index)) {
-            sink.on_columns({
-                {"level",     ColumnType::Int, std::nullopt},
-                {  "min", ColumnType::Point2d, std::nullopt},
-                {  "max", ColumnType::Point2d, std::nullopt},
-            });
+            auto cursor = rtree->rect_cursor();
 
-            // TODO: implement rtree cursor
-            // auto cursor = rtree->cursor();
-            // while (auto row = cursor.next())
-            //     sink.on_row({row->level, row->min, row->max});
+            sink.on_plane();
+
+            while (auto entry = cursor.next()) {
+                auto [level, rect] = std::move(*entry);
+                sink.on_rect(level, rect);
+            }
 
             return {};
         }
+    }
 
     return std::unexpected{UnsupportedOperation{stmt.col_name}};
 }
