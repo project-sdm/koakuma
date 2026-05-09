@@ -13,6 +13,6 @@ FROM debian:trixie
 WORKDIR /app
 
 COPY --from=builder /app/koakuma /app/koakuma
-COPY --from=builder /app/data/sample /app
+COPY --from=builder /app/data /app/data
 
 CMD ["./koakuma"]
