@@ -6,6 +6,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED 23)
 set(CMAKE_CXX_STANDARD_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(
+        -g
+        -Og
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+    )
+
+    add_link_options(
+        -fsanitize=address,undefined
+    )
+endif()
 
 add_executable(koakuma
   src/api/rest_server.cpp
@@ -39,6 +51,7 @@ target_include_directories(koakuma
 target_compile_options(koakuma PRIVATE -Wall -Wextra)
 
 target_link_libraries(koakuma PRIVATE pthread)
+
 
 include(GNUInstallDirs)
 
