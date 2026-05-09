@@ -171,6 +171,7 @@ namespace parser {
         ShowStatement stmt{};
 
         auto table_tok = TRY(expect_var<Identifier>());
+        TRYV(expect_val<Symbol::Period>());
         auto col_tok = TRY(expect_var<Identifier>());
         TRYV(expect_val<Symbol::SemiColon>());
 
