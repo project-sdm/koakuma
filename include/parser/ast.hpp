@@ -110,8 +110,17 @@ namespace parser {
         bool if_exists = false;
     };
 
-    using Statement = std::
-        variant<CreateStatement, SelectStatement, InsertStatement, DeleteStatement, DropStatement>;
+    struct ShowStatement {
+        std::string table_name;
+        std::string col_name;
+    };
+
+    using Statement = std::variant<CreateStatement,
+                                   SelectStatement,
+                                   InsertStatement,
+                                   DeleteStatement,
+                                   DropStatement,
+                                   ShowStatement>;
 
     struct SourceFile {
         std::vector<Statement> statements;
@@ -373,6 +382,18 @@ struct std::formatter<parser::DropStatement, char> {
     static auto format(const parser::DropStatement& stmt, std::format_context& ctx) {
         return std::format_to(ctx.out(), "DROP TABLE {} - if exists: {} ", stmt.table_name,
                               stmt.if_exists);
+    }
+};
+
+template<>
+struct std::formatter<parser::ShowStatement, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const parser::ShowStatement& stmt, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "SHOW INDEX IN TABLE {} FOR COLUMN {} ", stmt.table_name,
+                              stmt.col_name);
     }
 };
 

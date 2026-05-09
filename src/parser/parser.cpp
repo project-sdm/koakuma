@@ -1,7 +1,6 @@
 #include "parser/parser.hpp"
 #include <cassert>
 #include <expected>
-#include <print>
 #include "parser/ast.hpp"
 #include "parser/error.hpp"
 #include "parser/token.hpp"
@@ -35,6 +34,8 @@ namespace parser {
                     return delete_statement();
                 case Keyword::Drop:
                     return drop_statement();
+                case Keyword::Show:
+                    return show_statement();
                 default:
                     return std::unexpected{ParseError::UnexpectedToken};
             }
@@ -160,6 +161,22 @@ namespace parser {
         TRYV(expect_val<Symbol::SemiColon>());
 
         stmt.table_name = table_tok.value;
+        return stmt;
+    }
+
+    std::expected<ShowStatement, CompileError> Parser::show_statement() {
+        TRYV(expect_val<Keyword::Show>());
+        TRYV(expect_val<Keyword::Index>());
+
+        ShowStatement stmt{};
+
+        auto table_tok = TRY(expect_var<Identifier>());
+        auto col_tok = TRY(expect_var<Identifier>());
+        TRYV(expect_val<Symbol::SemiColon>());
+
+        stmt.table_name = table_tok.value;
+        stmt.col_name = col_tok.value;
+
         return stmt;
     }
 

@@ -35,6 +35,7 @@ namespace parser {
         std::expected<InsertStatement, CompileError> insert_statement();
         std::expected<DeleteStatement, CompileError> delete_statement();
         std::expected<DropStatement, CompileError> drop_statement();
+        std::expected<ShowStatement, CompileError> show_statement();
 
         std::expected<InsertValue, CompileError> insert_value();
         std::expected<ExprLit, CompileError> expr_lit();
