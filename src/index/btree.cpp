@@ -9,7 +9,7 @@
 #include <utility>
 #include "engine/buffer_manager.hpp"
 #include "engine/file_manager.hpp"
-#include "file/seq_file.hpp"
+#include "file/common.hpp"
 
 BTreeIndex::BTreeIndex(Engine& engine, FileId fid)
     : eng{engine},
@@ -287,6 +287,9 @@ void BTreeIndex::add(const Value& key, Rid rid) {
             new_root_page.init();
             new_root_page.insert(0, SlotExtra::inner(left_pnum), right_min);
             new_root_page.header_extra().last_child = right_pnum;
+
+            std::print("new root: ");
+            ugly_print();
         }
 
         file_hdr.root = new_root_pnum;
@@ -328,7 +331,7 @@ void BTreeIndex::ugly_print() const {
     std::println();
 }
 
-bool BTreeIndex::remove(const Value& key) {
+bool BTreeIndex::remove(const Value& key, const Rid& rid) {
     auto file_hdr = eng.file_mgr.read_user_header<BTreeHeader>(fid);
 
     assert(file_hdr.root != PAGE_NIL);  // should exist due to init()
@@ -363,6 +366,36 @@ bool BTreeIndex::remove(const Value& key) {
 
         if (i == leaf_page.slot_cnt())
             return false;
+
+        // we must now find the correct RID
+        // we do a linear scan from this point on, then swap and remove
+        Rid found_rid = leaf_page.read_slot_extra(i).rid;
+
+        {
+            pnum_t cur_pnum = leaf_pnum;
+            u32 cur_slot = i;
+
+            NodePage cur_page{eng.buf_mgr.fetch_page(fid, cur_pnum)};
+
+            while (true) {
+                if (cur_page.read_slot_extra(cur_slot).rid == rid) {
+                    cur_page.write_slot_extra(cur_slot, SlotExtra::leaf(found_rid));
+                    break;
+                }
+
+                cur_slot += 1;
+
+                if (cur_slot == cur_page.slot_cnt()) {
+                    cur_slot = 0;
+                    cur_pnum = cur_page.const_header_extra().next_page;
+
+                    if (cur_pnum == PAGE_NIL)
+                        return false;
+
+                    cur_page = NodePage{eng.buf_mgr.fetch_page(fid, cur_pnum)};
+                }
+            }
+        }
 
         auto removed_key = leaf_page.read_data(i);
         leaf_page.remove(i);

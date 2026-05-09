@@ -47,7 +47,7 @@ namespace catalog {
         [[nodiscard]] std::size_t pkey_col_num() const;
 
         std::expected<Rid, InsertionError> insert(const Row& row);
-        void delete_by_eq(std::size_t col_num, const Value& val);
+        std::expected<bool, ValueNotHashable> delete_by_pkey(const Value& pkey);
 
         SeqFile::Cursor cursor();
         AnyIndex* get_index(const std::string& col_name);

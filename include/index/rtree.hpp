@@ -1,10 +1,12 @@
 #ifndef RTREE_HPP
 #define RTREE_HPP
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -414,10 +416,11 @@ public:
                      pnum_t root_pnum)
             : fid{fid},
               buf_mgr{buf_mgr},
+              point{std::move(point)},
               radius_sq{radius * radius} {
             for (std::size_t i = 0; i < N; ++i) {
-                search_rect.min[i] = point[i] - radius;
-                search_rect.max[i] = point[i] + radius;
+                search_rect.min[i] = this->point[i] - radius;
+                search_rect.max[i] = this->point[i] + radius;
             }
 
             q.push(root_pnum);
@@ -444,8 +447,9 @@ public:
                     f64 dist_sq = 0;
 
                     for (std::size_t d = 0; d < N; ++d) {
-                        f64 v = point[d];
-                        f64 diff = v < rec.rect.min[d] ? rec.rect.min[d] - v : v - rec.rect.max[d];
+                        assert(std::abs(rec.rect.min[d] - rec.rect.max[d]) < 1e-9);
+                        f64 diff = std::abs(rec.rect.min[d] - point[d]);
+
                         dist_sq += diff * diff;
                     }
 
@@ -670,31 +674,68 @@ public:
         }
     }
 
-    bool remove_recursive(const Rect<N>& rect, pnum_t pnum, std::vector<pnum_t>& reinsert_list) {
+    bool remove_recursive(const Rect<N>& rect,
+                          const Rid& rid,
+                          pnum_t pnum,
+                          std::vector<pnum_t>& reinsert_list) {
         NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
+
         if (page.const_header_extra().level == 0) {
             for (u32 i = 0; i < page.count(); ++i) {
+                auto rec = page.read(i);
+
+                if (!rec.rect.intersects(rect))
+                    continue;
+
+                if (const auto* cur_rid = std::get_if<Rid>(&rec.var); *cur_rid == rid) {
+                    page.swap_remove(i);
+                    return true;
+                }
             }
         }
+
+        for (u32 i = 0; i < page.count(); ++i) {
+            auto rec = page.read(i);
+
+            if (!rec.rect.intersects(rect))
+                continue;
+
+            pnum_t child_pnum = std::get<pnum_t>(rec.var);
+
+            if (remove_recursive(rect, rid, child_pnum, reinsert_list)) {
+                NodePage child_page{eng.buf_mgr.fetch_page(fid, child_pnum)};
+
+                if (child_page.count() >= child_page.capacity() / 2) {
+                    rec.rect = node_cover(child_page);
+                    child_page.write(i, rec);
+                } else {
+                    reinsert_list.push_back(child_pnum);
+                    page.swap_remove(i);
+                }
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    bool remove(const Rect<N>& rect) {
+    bool remove(const Point<N>& point, const Rid& rid) {
+        Rect<N> rect{point, point};
         auto file_hdr = eng.file_mgr.read_user_header<RTreeHeader>(fid);
+
         std::vector<pnum_t> reinsert_list;
 
-        if (!remove_recursive(rect, file_hdr.root, reinsert_list))
+        if (!remove_recursive(rect, rid, file_hdr.root, reinsert_list))
             return false;
 
         for (auto& pnum : reinsert_list) {
             NodePage page{eng.buf_mgr.fetch_page(fid, pnum)};
+            auto level = page.const_header_extra().level;
 
             for (u32 i = 0; i < page.count(); ++i) {
                 pnum_t new_pnum = PAGE_NIL;
-
-                auto rec = page.read(i);
-                auto header_extra = page.const_header_extra();
-
-                insert_recursive(file_hdr.root, rec, new_pnum, header_extra.level);
+                insert_recursive(file_hdr.root, page.read(i), new_pnum, level);
             }
         }
 
@@ -704,6 +745,8 @@ public:
             file_hdr.root = std::get<pnum_t>(root_page.read(0).var);
             eng.file_mgr.write_user_header(fid, file_hdr);
         }
+
+        return true;
     }
 
     [[nodiscard]] Cursor search(Rect<N> rect) {
@@ -813,10 +856,6 @@ private:
 
 public:
     RTree() = default;
-
-    bool remove(const T& value) {
-        return remove(nullptr, value);
-    }
 
     bool remove(const Rect<N>& rect, const T& value) {
         return remove(&rect, value);

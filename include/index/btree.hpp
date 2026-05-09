@@ -7,8 +7,8 @@
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
+#include "file/common.hpp"
 #include "layout/slotted_page.hpp"
-#include "file/seq_file.hpp"
 #include "util.hpp"
 
 // (actually a b+ tree)
@@ -25,7 +25,7 @@ private:
     };
 
     union SlotExtra {
-        pnum_t left_child;
+        pnum_t left_child{};
         Rid rid;
 
         static SlotExtra inner(pnum_t left_child) {
@@ -104,7 +104,7 @@ public:
 
     [[nodiscard]] RangeCursor range_search(const Value& key_low, const Value& key_high);
 
-    bool remove(const Value& key);
+    bool remove(const Value& key, const Rid& rid);
 };
 
 #endif

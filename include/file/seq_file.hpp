@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cstdio>
-#include <format>
 #include <optional>
 #include <vector>
 #include "common.hpp"
@@ -140,56 +139,9 @@ public:
     std::optional<std::pair<Rid, InsertResult>> add(const Row& row);
     [[nodiscard]] std::optional<Row> search(const Value& pkey);
     [[nodiscard]] RangeCursor range_search(const Value& pkey_low, const Value& pkey_high);
-    std::optional<Rid> remove(const Value& pkey);
+    std::optional<std::pair<Rid, Row>> remove(const Value& pkey);
 
     Cursor cursor();
-};
-
-template<>
-struct std::formatter<Value, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(const Value& val, std::format_context& ctx) {
-        if (const auto* s = std::get_if<std::string>(&val))
-            return std::format_to(ctx.out(), "'{}'", *s);
-
-        return std::visit([&](auto&& v) { return std::format_to(ctx.out(), "{}", v); }, val);
-    }
-};
-
-template<>
-struct std::formatter<Row, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(const Row& row, std::format_context& ctx) {
-        auto out = ctx.out();
-        std::format_to(out, "(");
-
-        if (!row.empty()) {
-            std::format_to(out, "{}", row[0]);
-
-            for (std::size_t i = 1; i < row.size(); ++i)
-                std::format_to(out, ", {}", row[i]);
-        }
-
-        std::format_to(out, ")");
-        return out;
-    }
-};
-
-template<>
-struct std::formatter<Rid, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(const Rid& rid, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "Rid({}, {})", rid.pnum, rid.slot_idx);
-    }
 };
 
 #endif

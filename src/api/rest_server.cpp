@@ -18,6 +18,7 @@
 #include "magic_enum/magic_enum.hpp"
 #include "parser/parser.hpp"
 #include "query_executor.hpp"
+#include "types.hpp"
 
 using nlohmann::json;
 
@@ -64,6 +65,8 @@ struct QueryResult {
 
     struct Plane {
         std::vector<std::pair<u64, Rect<2>>> rects;
+        std::optional<Point<2>> point;
+        std::optional<f64> radius;
     };
 
     struct Ok {
@@ -89,7 +92,9 @@ void to_json(json& j, const QueryResult::Table& table) {  // NOLINT(misc-use-int
 
 void to_json(json& j, const QueryResult::Plane& plane) {  // NOLINT(misc-use-internal-linkage)
     j = json{
-        {"rects", plane.rects},
+        { "rects",  plane.rects},
+        { "point",  plane.point},
+        {"radius", plane.radius},
     };
 }
 
@@ -140,6 +145,16 @@ namespace {
         void on_rect(u64 level, const Rect<2>& rect) override {
             auto& result = std::get<QueryResult::Ok>(results.back().value);
             result.plane->rects.emplace_back(level, rect);
+        }
+
+        void on_point(const Point<2>& point) override {
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.plane->point = point;
+        }
+
+        void on_radius(f64 radius) override {
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.plane->radius = radius;
         }
 
         void on_message(const std::string& message) override {

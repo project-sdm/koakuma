@@ -101,6 +101,8 @@ public:
 
         virtual void on_plane() = 0;
         virtual void on_rect(u64 level, const Rect<2>& rect) = 0;
+        virtual void on_point(const Point<2>& point) = 0;
+        virtual void on_radius(f64 radius) = 0;
 
         virtual void on_message(const std::string& message) = 0;
         virtual void on_warning(const std::string& warning) = 0;

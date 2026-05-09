@@ -100,7 +100,8 @@ namespace parser {
 
     struct DeleteStatement {
         std::string table_name;
-        Filter filter;
+        std::string col_name;
+        ExprLit value;
     };
 
     struct DropStatement {
@@ -350,8 +351,8 @@ struct std::formatter<parser::DeleteStatement, char> {
     }
 
     static auto format(const parser::DeleteStatement& stmt, std::format_context& ctx) {
-        return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
-                              stmt.filter);
+        return std::format_to(ctx.out(), "DELETE FROM {} WHERE {} = {}", stmt.table_name,
+                              stmt.col_name, stmt.value);
     }
 };
 

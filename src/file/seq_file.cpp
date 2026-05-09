@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
-#include <print>
 #include <stdexcept>
 #include <utility>
 #include "engine/buffer_manager.hpp"
@@ -65,7 +64,7 @@ std::optional<u32> SeqFile::find_slot_by_pkey_in_main_page(pnum_t pnum, const Va
             return mid;
 
         if (pkey < row[file_hdr.pkey_col])
-            high = mid - 1;
+            high = mid;
         else
             low = mid + 1;
     }
@@ -119,13 +118,15 @@ pnum_t SeqFile::calc_aux_pnum(const SeqHeader& file_hdr) {
 
 std::optional<Rid> SeqFile::find_by_pkey_in_aux_page(const Value& pkey) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
-    SeqPage page{eng.buf_mgr.fetch_page(fid, calc_aux_pnum(file_hdr))};
 
-    for (u32 i = 0; i < page.slot_cnt(); ++i) {
-        auto row = page.read_data(i);
+    pnum_t aux_pnum = calc_aux_pnum(file_hdr);
+    SeqPage aux_page{eng.buf_mgr.fetch_page(fid, aux_pnum)};
+
+    for (u32 i = 0; i < aux_page.slot_cnt(); ++i) {
+        auto row = aux_page.read_data(i);
 
         if (pkey == row[file_hdr.pkey_col])
-            return Rid{calc_aux_pnum(file_hdr), i};
+            return Rid{aux_pnum, i};
     }
 
     return std::nullopt;
@@ -265,11 +266,12 @@ std::pair<Rid, SeqFile::InsertResult> SeqFile::insert_into_aux(const Row& row) {
     return std::make_pair(rid, InsertResult::Rebuild);
 }
 
-std::optional<Rid> SeqFile::remove(const Value& pkey) {
+std::optional<std::pair<Rid, Row>> SeqFile::remove(const Value& pkey) {
     auto rid = TRY_OPT(find_rid_by_pkey_in_all_pages(pkey));
 
     SeqPage page{eng.buf_mgr.fetch_page(fid, rid.pnum)};
     auto extra = page.read_slot_extra(rid.slot_idx);
+    Row row = page.read_data(rid.slot_idx);
 
     if (!extra.active)
         return std::nullopt;
@@ -277,7 +279,7 @@ std::optional<Rid> SeqFile::remove(const Value& pkey) {
     extra.active = false;
     page.write_slot_extra(rid.slot_idx, extra);
 
-    return rid;
+    return std::make_pair(rid, std::move(row));
 }
 
 SeqFile::Meta::Meta(std::vector<Column> columns, std::size_t pkey_col)
@@ -302,8 +304,9 @@ Cursor SeqFile::cursor() {
 SeqFile::SeqPage& Cursor::page() {
     assert(cur_pnum != PAGE_NIL);
 
-    if (!page_buf)
+    if (!page_buf) {
         page_buf.emplace(seq_file.eng.buf_mgr.fetch_page(seq_file.fid, cur_pnum));
+    }
 
     return *page_buf;
 }

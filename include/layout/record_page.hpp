@@ -27,15 +27,15 @@ private:
     Header hdr;
     bool is_dirty = false;
 
-    [[nodiscard]] static std::size_t capacity() {
-        return (PAGE_SIZE - sizeof(Header)) / sizeof(T);
-    }
-
     [[nodiscard]] static u32 entry_offset(u32 entry_idx) {
         return sizeof(Header) + (entry_idx * sizeof(T));
     }
 
 public:
+    [[nodiscard]] static std::size_t capacity() {
+        return (PAGE_SIZE - sizeof(Header)) / sizeof(T);
+    }
+
     explicit RecordPage(PageGuard page)
         : page{std::move(page)},
           hdr{util::span_read<Header>(this->page.const_data(), 0)} {}
@@ -123,7 +123,6 @@ public:
         assert(entry_idx < hdr.count);
 
         auto last = read(hdr.count - 1);
-        auto removed = read(entry_idx);
         write(entry_idx, last);
 
         hdr.count -= 1;

@@ -1,4 +1,5 @@
 #include "catalog.hpp"
+#include <cassert>
 #include <cstddef>
 #include <expected>
 #include <filesystem>
@@ -6,6 +7,7 @@
 #include <utility>
 #include <variant>
 #include "engine/file_manager.hpp"
+#include "file/common.hpp"
 #include "file/seq_file.hpp"
 #include "index/btree.hpp"
 #include "index/hash.hpp"
@@ -47,12 +49,11 @@ namespace catalog {
     }
 
     std::expected<void, catalog::InsertionError> Table::rebuild_indices() {
-        auto cursor = seq_file.cursor();
-
         for (auto& [col_idx, index] : col_indices) {
             TRYV(std::visit(
                 util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
                                      hash.init();
+                                     auto cursor = seq_file.cursor();
 
                                      while (auto data = cursor.next()) {
                                          auto [rid, row] = *data;
@@ -63,6 +64,7 @@ namespace catalog {
                                  },
                                  [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
                                      btree.init();
+                                     auto cursor = seq_file.cursor();
 
                                      while (auto data = cursor.next()) {
                                          auto [rid, row] = *data;
@@ -73,6 +75,7 @@ namespace catalog {
                                  },
                                  [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
                                      rtree.init();
+                                     auto cursor = seq_file.cursor();
 
                                      while (auto data = cursor.next()) {
                                          auto [rid, row] = *data;
@@ -129,6 +132,36 @@ namespace catalog {
         }
 
         return rid;
+    }
+
+    std::expected<bool, ValueNotHashable> Table::delete_by_pkey(const Value& pkey) {
+        auto res = seq_file.remove(pkey);
+        if (!res)
+            return false;
+
+        auto [rid, row] = *res;
+
+        for (auto& [col_idx, index] : col_indices) {
+            using Result = std::expected<bool, ValueNotHashable>;
+
+            TRYV(std::visit(util::overloaded{[&](HashIndex& hash) -> Result {
+                                                 auto hash_val = TRY(val_to_hash_val(row[col_idx]));
+                                                 assert(hash.remove(hash_val, rid));
+                                                 return {};
+                                             },
+                                             [&](BTreeIndex& btree) -> Result {
+                                                 assert(btree.remove(row[col_idx], rid));
+                                                 return {};
+                                             },
+                                             [&](RTreeIndex<2>& rtree) -> Result {
+                                                 auto point = std::get<Point<2>>(row[col_idx]);
+                                                 assert(rtree.remove(point, rid));
+                                                 return {};
+                                             }},
+                            index));
+        }
+
+        return true;
     }
 
     SeqFile::Cursor Table::cursor() {

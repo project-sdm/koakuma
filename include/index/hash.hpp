@@ -7,9 +7,9 @@
 #include "engine/buffer_manager.hpp"
 #include "engine/engine.hpp"
 #include "engine/file_manager.hpp"
+#include "file/common.hpp"
 #include "layout/slotted_page.hpp"
 #include "pack.hpp"
-#include "file/seq_file.hpp"
 #include "types.hpp"
 #include "util.hpp"
 
@@ -74,7 +74,7 @@ public:
 
     [[nodiscard]] Cursor search(const HashValue& key);
 
-    bool remove(const HashValue& key);
+    bool remove(const HashValue& key, const Rid& rid);
 
     void ugly_print() const;
 };

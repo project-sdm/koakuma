@@ -8,6 +8,7 @@
 #include <variant>
 #include "engine/buffer_manager.hpp"
 #include "engine/file_manager.hpp"
+#include "file/common.hpp"
 #include "types.hpp"
 
 ValueNotHashable::ValueNotHashable(Value val)
@@ -157,7 +158,7 @@ HashIndex::Cursor HashIndex::search(const HashValue& key) {
     return Cursor{eng.buf_mgr, fid, file_hdr.dir[h_part], key};
 }
 
-bool HashIndex::remove(const HashValue& key) {
+bool HashIndex::remove(const HashValue& key, const Rid& rid) {
     auto file_hdr = eng.file_mgr.read_user_header<HashHeader>(fid);
 
     std::size_t h = std::hash<HashValue>{}(key) % (1 << file_hdr.global_depth);
@@ -167,7 +168,7 @@ bool HashIndex::remove(const HashValue& key) {
         BucketPage bucket_page{eng.buf_mgr.fetch_page(fid, cur_bucket)};
 
         for (u32 i = 0; i < bucket_page.slot_cnt(); ++i) {
-            if (key == bucket_page.read_data(i)) {
+            if (key == bucket_page.read_data(i) && rid == bucket_page.read_slot_extra(i).rid) {
                 bucket_page.swap_remove(i);
                 return true;
             }

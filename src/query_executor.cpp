@@ -5,7 +5,6 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
-#include <print>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -191,6 +190,33 @@ namespace volcano {
         Iter it;
     };
 
+    template<util::iter_of<Rid> Iter>
+    class PointScan {
+    public:
+        explicit PointScan(SeqFile& seq_file,
+                           QueryExecutor::RowSink& sink,
+                           std::size_t col_num,
+                           Iter it)
+            : seq_file{seq_file},
+              sink{sink},
+              col_num{col_num},
+              it{std::move(it)} {}
+
+        std::expected<std::optional<Row>, ExecutionError> next() {
+            Rid rid = TRY_OPT(it.next());
+            Row row = seq_file.read_rid(rid);
+
+            auto point = std::get<Point<2>>(row[col_num]);
+            sink.on_rect(0, Rect{point, point});
+            return row;
+        }
+
+    private:
+        SeqFile& seq_file;
+        QueryExecutor::RowSink& sink;
+        std::size_t col_num;
+        Iter it;
+    };
     class Filter {
     public:
         Filter(VolcanoIterator child, parser::Filter filter, SeqFile::Meta meta)
@@ -508,10 +534,14 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
 
                 Point<2> point{rad_filter->origin.x, rad_filter->origin.y};
 
+                sink.on_plane();
+                sink.on_point(point);
+                sink.on_radius(rad_filter->radius);
+
                 auto& seq_file = table.get_seq_file();
                 auto cursor = rtree->range_search(point, rad_filter->radius);
 
-                volcano::IndexScan scan{seq_file, std::move(cursor)};
+                volcano::PointScan scan{seq_file, sink, col_num, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
         }
@@ -522,10 +552,13 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
 
                 Point<2> point{k_filter->origin.x, k_filter->origin.y};
 
+                sink.on_plane();
+                sink.on_point(point);
+
                 auto& seq_file = table.get_seq_file();
                 auto cursor = rtree->knn(point, k_filter->k);
 
-                volcano::IndexScan scan{seq_file, std::move(cursor)};
+                volcano::PointScan scan{seq_file, sink, col_num, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
         }
@@ -578,15 +611,21 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     if (!table)
         return std::unexpected{TableNotFound{stmt.table_name}};
 
-    u32 col_num = table->col_num(stmt.filter.col_name);
+    auto meta = table->get_meta();
+
+    std::size_t col_num = table->col_num(stmt.col_name);
+    auto& col = meta.columns[col_num];
 
     if (col_num == table->pkey_col_num()) {
-        table->get_seq_file();
+        auto pkey_val = TRY(lit_cast(stmt.value, col.type));
+
+        if (!TRY(table->delete_by_pkey(pkey_val)))
+            sink.on_message("No rows affected.");
 
         return {};
     }
 
-    return {};
+    return std::unexpected{UnsupportedOperation{stmt.col_name}};
 }
 
 std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(

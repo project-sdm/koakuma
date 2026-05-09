@@ -137,9 +137,14 @@ namespace parser {
         stmt.table_name = table_tok.value;
 
         TRYV(expect_val<Keyword::Where>());
-        stmt.filter = TRY(where_declaration());
 
+        auto iden_tok = TRY(expect_var<Identifier>());
+        stmt.col_name = iden_tok.value;
+
+        TRYV(expect_val<Symbol::Eq>());
+        stmt.value = TRY(expr_lit());
         TRYV(expect_val<Symbol::SemiColon>());
+
         return stmt;
     }
 
@@ -251,13 +256,14 @@ namespace parser {
         if (TRY(accept_val<Keyword::False>()))
             return false;
 
-        if (TRY(accept_val<Symbol::LParen>())) {
+        if (TRY(accept_val<Keyword::Point>())) {
+            TRYV(expect_val<Symbol::LParen>());
             auto x_tok = TRY(expect_var<Number>());
             TRYV(expect_val<Symbol::Comma>());
             auto y_tok = TRY(expect_var<Number>());
             TRYV(expect_val<Symbol::RParen>());
 
-            return Point2D(x_tok.value, y_tok.value);
+            return Point2D{x_tok.value, y_tok.value};
         }
 
         return std::unexpected{ParseError::UnexpectedToken};
