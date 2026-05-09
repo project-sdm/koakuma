@@ -9,10 +9,10 @@ statement := create_statement |
 
 create_statement :=
   "create" "table" [ "if" "not" "exists" ] identifier "("
-  identifier datatype [ ( "index" identifier ) | ( "primary" "key" ) ]
-  { "," identifier datatype [ ( "index" identifier ) | ( "primary" "key" ) ] }
-  ")" [ "from" "file" literal ] ";"
+  column_decl { "," column_decl } ")" [ "from" "file" STR_LIT ] ";"
   ;
+
+column_decl := identifier datatype [ ( "index" identifier ) | ( "primary" "key" ) ]
 
 select_statement :=
   "select" "*" "from" identifier [ "where" where_declaration ] ";"
@@ -25,7 +25,7 @@ insert_statement :=
   ;
 
 delete_statement :=
-  "delete" "from" identifier [ "where" where_declaration ] ";"
+  "delete" "from" identifier "where" identifier "=" expr_lit  ";"
   ;
 
 drop_statement :=
@@ -37,17 +37,17 @@ show_statement :=
   ;
 
 where_declaration :=
-  identifier, (
+  identifier (
     ( "=" expr_lit )                      |
     ( "between" expr_lit "and" expr_lit ) |
-    ( "in" "(" "point" "(" number "," number ")" "," ( ( "radius" number ) | ( "k" number ) ) ")" )
+    ( "in" "(" "point" "(" NUM_LIT "," NUM_LIT ")" "," ( ( "radius" NUM_LIT ) | ( "k" NUM_LIT ) ) ")" )
   )
   ;
 
 expr_lit :=
-  literal |
-  number  |
+  STR_LIT |
+  NUM_LIT  |
   "true"  |
   "false" |
-  "(" number "," number ")"
+  "point" "(" NUM_LIT "," NUM_LIT ")"
   ;
