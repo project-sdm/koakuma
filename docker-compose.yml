@@ -1,10 +1,12 @@
 services:
   koakuma:
+    container_name: "koakuma"
     image: "grazen/koakuma"
     ports:
       - "8080:8080"
 
   koakuma-frontend:
+    container_name: "koakuma-frontend"
     image: "grazen/koakuma-frontend"
     ports:
       - "3000:3000"
