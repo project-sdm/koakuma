@@ -48,8 +48,12 @@ InvalidIndexName::InvalidIndexName(std::string name)
 UnsupportedOperation::UnsupportedOperation(std::string col_name)
     : col_name{std::move(col_name)} {}
 
+ColumnCountMismatch::ColumnCountMismatch(std::size_t expected, std::size_t got)
+    : expected{expected},
+      got{got} {}
+
 namespace {
-    std::expected<Value, ExecutionError> lit2val(parser::ExprLit lit, ColumnType col_type) {
+    std::expected<Value, ExecutionError> lit_cast(parser::ExprLit lit, ColumnType col_type) {
         switch (col_type) {
             case ColumnType::Int:
                 if (auto* x = std::get_if<f64>(&lit)) {
@@ -209,12 +213,12 @@ namespace volcano {
                     util::overloaded{
                         [&](const parser::EqFilter& eq_filter)
                             -> std::expected<bool, ExecutionError> {
-                            return val == TRY(lit2val(eq_filter.value, col.type));
+                            return val == TRY(lit_cast(eq_filter.value, col.type));
                         },
                         [&](const parser::RangeFilter& range_filter)
                             -> std::expected<bool, ExecutionError> {
-                            auto low = TRY(lit2val(range_filter.low, col.type));
-                            auto high = TRY(lit2val(range_filter.high, col.type));
+                            auto low = TRY(lit_cast(range_filter.low, col.type));
+                            auto high = TRY(lit_cast(range_filter.high, col.type));
 
                             return low <= val && val <= high;
                         },
@@ -275,13 +279,22 @@ namespace {
         }
     };
 
-    Row map_exprs(const std::vector<parser::Expr>& exprs) {
-        Row row;
-        row.reserve(exprs.size());
-
-        for (const auto& expr : exprs) {
-            row.emplace_back(std::visit(ExprMapper{}, expr));
+    std::expected<Row, ExecutionError> map_exprs(const std::vector<parser::ExprLit>& ins_row,
+                                                 const std::vector<Column>& columns) {
+        if (ins_row.size() != columns.size()) {
+            return std::unexpected{
+                ColumnCountMismatch{columns.size(), ins_row.size()}
+            };
         }
+
+        Row row;
+        row.reserve(ins_row.size());
+
+        for (auto [lit, col] : std::views::zip(ins_row, columns)) {
+            Value val = TRY(lit_cast(lit, col.type));
+            row.push_back(val);
+        }
+
         return row;
     }
 
@@ -297,8 +310,11 @@ std::expected<void, ExecutionError> QueryExecutor::exec(const catalog::Catalog& 
 
     for (const auto& stmt : source_file.statements) {
         sink.on_begin();
-        TRYV(std::visit(executor, stmt));
-        std::println();
+        auto res = std::visit(executor, stmt);
+        if (!res) {
+            sink.on_error(std::format("{}", res.error()));
+            return {};
+        }
     }
 
     return {};
@@ -424,24 +440,25 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
 std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor::apply_filter(
     volcano::VolcanoIterator iter,
     catalog::Table& table,
-    const parser::Filter& filter) {
+    const parser::Filter& filter,
+    RowSink& sink) {
     auto meta = table.get_meta();
     std::size_t col_num = table.col_num(filter.col_name);
     auto col = meta.columns.at(col_num);
 
     if (col_num == table.pkey_col_num()) {
         if (const auto* eq_filter = std::get_if<parser::EqFilter>(&filter.data)) {
-            std::println("using pkey");
-            auto val = TRY(lit2val(eq_filter->value, col.type));
+            sink.on_message("Using binary search on primary key.");
+            auto val = TRY(lit_cast(eq_filter->value, col.type));
 
             volcano::PKeyScan scan{table.get_seq_file(), std::move(val)};
             return volcano::VolcanoIterator{std::move(scan)};
         }
 
         if (const auto* range_filter = std::get_if<parser::RangeFilter>(&filter.data)) {
-            std::println("using pkey range");
-            auto low = TRY(lit2val(range_filter->low, col.type));
-            auto high = TRY(lit2val(range_filter->high, col.type));
+            sink.on_message("Using range search on primary key.");
+            auto low = TRY(lit_cast(range_filter->low, col.type));
+            auto high = TRY(lit_cast(range_filter->high, col.type));
 
             volcano::SeqScan scan{table.get_seq_file().range_search(low, high)};
             return volcano::VolcanoIterator{std::move(scan)};
@@ -450,17 +467,9 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
 
     if (auto* index = table.get_index(filter.col_name)) {
         if (const auto* eq_filter = std::get_if<parser::EqFilter>(&filter.data)) {
-            if (col_num == table.pkey_col_num()) {
-                std::println("using pkey");
-                auto val = TRY(lit2val(eq_filter->value, col.type));
-
-                volcano::PKeyScan scan{table.get_seq_file(), std::move(val)};
-                return volcano::VolcanoIterator{std::move(scan)};
-            }
-
             if (auto* hash = std::get_if<HashIndex>(index)) {
-                std::println("using eq hash");
-                auto val = TRY(lit2val(eq_filter->value, col.type));
+                sink.on_message("Using equality search on hash index.");
+                auto val = TRY(lit_cast(eq_filter->value, col.type));
                 auto hash_val = TRY(val_to_hash_val(std::move(val)));
                 auto cursor = hash->search(hash_val);
 
@@ -469,8 +478,8 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
             }
 
             if (auto* btree = std::get_if<BTreeIndex>(index)) {
-                std::println("using eq btree");
-                auto val = TRY(lit2val(eq_filter->value, col.type));
+                sink.on_message("Using equality search on btree index.");
+                auto val = TRY(lit_cast(eq_filter->value, col.type));
                 auto cursor = btree->search(val);
 
                 volcano::IndexScan scan{table.get_seq_file(), std::move(cursor)};
@@ -480,10 +489,10 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
 
         if (const auto* range_filter = std::get_if<parser::RangeFilter>(&filter.data)) {
             if (auto* btree = std::get_if<BTreeIndex>(index)) {
-                std::println("using btree range");
+                sink.on_message("Using range search on btree index.");
 
-                auto low = TRY(lit2val(range_filter->low, col.type));
-                auto high = TRY(lit2val(range_filter->high, col.type));
+                auto low = TRY(lit_cast(range_filter->low, col.type));
+                auto high = TRY(lit_cast(range_filter->high, col.type));
 
                 auto& seq_file = table.get_seq_file();
                 auto cursor = btree->range_search(low, high);
@@ -495,7 +504,7 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
 
         if (const auto* rad_filter = std::get_if<parser::RadFilter>(&filter.data)) {
             if (auto* rtree = std::get_if<RTreeIndex<2>>(index)) {
-                std::println("using rtree radius search");
+                sink.on_message("Using radius search on rtree index.");
 
                 Point<2> point{rad_filter->origin.x, rad_filter->origin.y};
 
@@ -509,7 +518,7 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
 
         if (const auto* k_filter = std::get_if<parser::KFilter>(&filter.data)) {
             if (auto* rtree = std::get_if<RTreeIndex<2>>(index)) {
-                std::println("using rtree knn");
+                sink.on_message("Using KNN search on rtree index.");
 
                 Point<2> point{k_filter->origin.x, k_filter->origin.y};
 
@@ -540,7 +549,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     volcano::VolcanoIterator root{volcano::SeqScan{table->cursor()}};
 
     if (stmt.filter)
-        root = TRY(apply_filter(std::move(root), *table, *stmt.filter));
+        root = TRY(apply_filter(std::move(root), *table, *stmt.filter, sink));
 
     while (auto row = TRY(root.next()))
         sink.on_row(*row);
@@ -555,7 +564,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         return std::unexpected{TableNotFound{stmt.table_name}};
 
     for (const auto& value : stmt.values) {
-        Row row = map_exprs(value.exprs);
+        Row row = TRY(map_exprs(value.exprs, table->get_meta().columns));
         TRYV(table->insert(row));
     }
 
@@ -568,11 +577,12 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     if (!table)
         return std::unexpected{TableNotFound{stmt.table_name}};
 
-    auto cursor = table->cursor();
+    u32 col_num = table->col_num(stmt.filter.col_name);
 
-    while (auto row = cursor.next()) {
-        if (!stmt.filter.has_value() /* || applies(row, *stmt.filter) */)
-            return {};  // TODO: delete
+    if (col_num == table->pkey_col_num()) {
+        table->get_seq_file();
+
+        return {};
     }
 
     return {};

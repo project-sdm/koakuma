@@ -1,6 +1,7 @@
 #ifndef QUERY_EXECUTOR_HPP
 #define QUERY_EXECUTOR_HPP
 
+#include <cstddef>
 #include <expected>
 #include <string>
 #include <variant>
@@ -9,6 +10,7 @@
 #include "index/rtree.hpp"
 #include "magic_enum/magic_enum.hpp"
 #include "parser/ast.hpp"
+#include "types.hpp"
 
 namespace volcano {
 
@@ -21,6 +23,13 @@ struct UnexpectedType {
     ColumnType expected_type;
 
     UnexpectedType(parser::ExprLit lit, ColumnType expected_type);
+};
+
+struct ColumnCountMismatch {
+    std::size_t expected;
+    std::size_t got;
+
+    ColumnCountMismatch(std::size_t expected, std::size_t got);
 };
 
 struct TableNotFound {
@@ -71,6 +80,7 @@ struct UnsupportedOperation {
 
 using ExecutionError = std::variant<catalog::InsertionError,
                                     catalog::CreateTableError,
+                                    ColumnCountMismatch,
                                     UnexpectedType,
                                     TableNotFound,
                                     ColumnNotFound,
@@ -92,7 +102,9 @@ public:
         virtual void on_plane() = 0;
         virtual void on_rect(u64 level, const Rect<2>& rect) = 0;
 
+        virtual void on_message(const std::string& message) = 0;
         virtual void on_warning(const std::string& warning) = 0;
+        virtual void on_error(const std::string& error) = 0;
 
         virtual ~RowSink() = default;
     };
@@ -121,7 +133,8 @@ private:
         [[nodiscard]] static std::expected<volcano::VolcanoIterator, ExecutionError> apply_filter(
             volcano::VolcanoIterator iter,
             catalog::Table& table,
-            const parser::Filter& filter);
+            const parser::Filter& filter,
+            RowSink& sink);
     };
 
     Engine& engine;
@@ -227,6 +240,18 @@ struct std::formatter<UnsupportedOperation, char> {
     static auto format(const UnsupportedOperation& err, std::format_context& ctx) {
         return std::format_to(
             ctx.out(), "Unsupported operation on column '{}' without proper index.", err.col_name);
+    }
+};
+
+template<>
+struct std::formatter<ColumnCountMismatch, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const ColumnCountMismatch& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "Column count mismatch (expected {} values, got {})",
+                              err.expected, err.got);
     }
 };
 

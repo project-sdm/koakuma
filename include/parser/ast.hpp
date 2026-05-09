@@ -75,10 +75,8 @@ namespace parser {
         FilterData data;
     };
 
-    using Expr = std::variant<Literal, Number, bool>;
-
     struct InsertValue {
-        std::vector<Expr> exprs;
+        std::vector<ExprLit> exprs;
     };
 
     struct CreateStatement {
@@ -102,7 +100,7 @@ namespace parser {
 
     struct DeleteStatement {
         std::string table_name;
-        std::optional<Filter> filter;
+        Filter filter;
     };
 
     struct DropStatement {
@@ -214,18 +212,6 @@ struct std::formatter<parser::Filter, char> {
             std::visit([&](auto&& value) { return std::format_to(out, "{}", value); }, filter.data);
 
         return out;
-    }
-};
-
-template<>
-struct std::formatter<parser::Expr, char> {
-    static constexpr auto parse(std::format_parse_context& ctx) {
-        return ctx.begin();
-    }
-
-    static auto format(const parser::Expr& expr, std::format_context& ctx) {
-        return std::visit([&](auto&& value) { return std::format_to(ctx.out(), "{}", value); },
-                          expr);
     }
 };
 
@@ -364,12 +350,8 @@ struct std::formatter<parser::DeleteStatement, char> {
     }
 
     static auto format(const parser::DeleteStatement& stmt, std::format_context& ctx) {
-        if (stmt.filter) {
-            return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
-                                  *stmt.filter);
-        }
-
-        return std::format_to(ctx.out(), "DELETE FROM {} ", stmt.table_name);
+        return std::format_to(ctx.out(), "DELETE FROM {} -  FILTER: {}", stmt.table_name,
+                              stmt.filter);
     }
 };
 

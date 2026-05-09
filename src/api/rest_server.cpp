@@ -66,9 +66,18 @@ struct QueryResult {
         std::vector<std::pair<u64, Rect<2>>> rects;
     };
 
-    std::optional<Table> table;
-    std::optional<Plane> plane;
-    std::vector<std::string> warnings;
+    struct Ok {
+        std::optional<Table> table;
+        std::optional<Plane> plane;
+        std::vector<std::string> messages;
+        std::vector<std::string> warnings;
+    };
+
+    struct Error {
+        std::string detail;
+    };
+
+    std::variant<Ok, Error> value;
 };
 
 void to_json(json& j, const QueryResult::Table& table) {  // NOLINT(misc-use-internal-linkage)
@@ -84,12 +93,25 @@ void to_json(json& j, const QueryResult::Plane& plane) {  // NOLINT(misc-use-int
     };
 }
 
-void to_json(json& j, const QueryResult& result) {  // NOLINT(misc-use-internal-linkage)
+void to_json(json& j, const QueryResult::Ok& result) {  // NOLINT(misc-use-internal-linkage)
     j = json{
+        {  "status",            "ok"},
         {   "table",    result.table},
         {   "plane",    result.plane},
-        {"warnings", result.warnings}
+        {"messages", result.messages},
+        {"warnings", result.warnings},
     };
+}
+
+void to_json(json& j, const QueryResult::Error& err) {  // NOLINT(misc-use-internal-linkage)
+    j = json{
+        {"status",    "error"},
+        {"detail", err.detail},
+    };
+}
+
+void to_json(json& j, const QueryResult& result) {  // NOLINT(misc-use-internal-linkage)
+    j = result.value;
 }
 
 namespace {
@@ -101,23 +123,37 @@ namespace {
         }
 
         void on_table(const std::vector<Column>& columns) override {
-            results.back().table = QueryResult::Table{columns};
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.table = QueryResult::Table{columns};
         }
 
         void on_row(const Row& row) override {
-            results.back().table->rows.push_back(row);
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.table->rows.push_back(row);
         }
 
         void on_plane() override {
-            results.back().plane = QueryResult::Plane{};
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.plane = QueryResult::Plane{};
         }
 
         void on_rect(u64 level, const Rect<2>& rect) override {
-            results.back().plane->rects.emplace_back(level, rect);
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.plane->rects.emplace_back(level, rect);
+        }
+
+        void on_message(const std::string& message) override {
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.messages.push_back(message);
         }
 
         void on_warning(const std::string& warning) override {
-            results.back().warnings.push_back(warning);
+            auto& result = std::get<QueryResult::Ok>(results.back().value);
+            result.warnings.push_back(warning);
+        }
+
+        void on_error(const std::string& error) override {
+            results.back().value = QueryResult::Error{error};
         }
 
         [[nodiscard]] const std::vector<QueryResult>& get_results() const {

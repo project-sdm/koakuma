@@ -119,9 +119,7 @@ namespace parser {
         stmt.table_name = iden_tok.value;
 
         do {
-            TRYV(expect_val<Symbol::LParen>());
             auto insert_val = TRY(insert_value());
-            TRYV(expect_val<Symbol::RParen>());
 
             stmt.values.emplace_back(std::move(insert_val));
         } while (TRY(accept_val<Symbol::Comma>()));
@@ -138,8 +136,8 @@ namespace parser {
         DeleteStatement stmt{};
         stmt.table_name = table_tok.value;
 
-        if (TRY(accept_val<Keyword::Where>()))
-            stmt.filter = TRY(where_declaration());
+        TRYV(expect_val<Keyword::Where>());
+        stmt.filter = TRY(where_declaration());
 
         TRYV(expect_val<Symbol::SemiColon>());
         return stmt;
@@ -183,20 +181,14 @@ namespace parser {
 
     std::expected<InsertValue, CompileError> Parser::insert_value() {
         InsertValue value;
+        TRYV(expect_val<Symbol::LParen>());
 
         do {
-            if (auto tok = TRY(accept_var<Number>()))
-                value.exprs.emplace_back(*tok);
-            else if (auto tok = TRY(accept_var<Literal>()))
-                value.exprs.emplace_back(*tok);
-            else if (TRY(accept_val<Keyword::True>()))
-                value.exprs.emplace_back(true);
-            else if (TRY(accept_val<Keyword::False>()))
-                value.exprs.emplace_back(false);
-            else
-                return std::unexpected{ParseError::UnexpectedToken};
-
+            ExprLit lit = TRY(expr_lit());
+            value.exprs.push_back(std::move(lit));
         } while (TRY(accept_val<Symbol::Comma>()));
+
+        TRYV(expect_val<Symbol::RParen>());
 
         return value;
     }

@@ -6,10 +6,10 @@
 #include <utility>
 #include <variant>
 #include "engine/file_manager.hpp"
+#include "file/seq_file.hpp"
 #include "index/btree.hpp"
 #include "index/hash.hpp"
 #include "index/rtree.hpp"
-#include "file/seq_file.hpp"
 #include "util.hpp"
 
 namespace catalog {
@@ -46,6 +46,48 @@ namespace catalog {
         return meta.pkey_col;
     }
 
+    std::expected<void, catalog::InsertionError> Table::rebuild_indices() {
+        auto cursor = seq_file.cursor();
+
+        for (auto& [col_idx, index] : col_indices) {
+            TRYV(std::visit(
+                util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
+                                     hash.init();
+
+                                     while (auto data = cursor.next()) {
+                                         auto [rid, row] = *data;
+                                         hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
+                                     }
+
+                                     return {};
+                                 },
+                                 [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
+                                     btree.init();
+
+                                     while (auto data = cursor.next()) {
+                                         auto [rid, row] = *data;
+                                         btree.add(row[col_idx], rid);
+                                     }
+
+                                     return {};
+                                 },
+                                 [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
+                                     rtree.init();
+
+                                     while (auto data = cursor.next()) {
+                                         auto [rid, row] = *data;
+                                         auto point = std::get<Point<2>>(row[col_idx]);
+                                         rtree.add(point, rid);
+                                     }
+
+                                     return {};
+                                 }},
+                index));
+        }
+
+        return {};
+    }
+
     catalog::AnyIndex* Table::get_index(const std::string& col_name) {
         auto num = col_nums.at(col_name);
         auto it = col_indices.find(num);
@@ -64,63 +106,26 @@ namespace catalog {
         auto [rid, result] = *add_result;
 
         if (result == SeqFile::InsertResult::Rebuild) {
-            auto cursor = seq_file.cursor();
+            TRYV(rebuild_indices());
+            return rid;
+        }
 
-            for (auto& [col_idx, index] : col_indices) {
-                TRYV(std::visit(
-                    util::overloaded{
-                        [&](HashIndex& hash) -> std::expected<void, InsertionError> {
-                            hash.init();
-
-                            while (auto data = cursor.next()) {
-                                auto [rid, row] = *data;
-                                hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
-                            }
-
-                            return {};
-                        },
-                        [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
-                            btree.init();
-
-                            while (auto data = cursor.next()) {
-                                auto [rid, row] = *data;
-                                btree.add(row[col_idx], rid);
-                            }
-
-                            return {};
-                        },
-                        [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
-                            rtree.init();
-
-                            while (auto data = cursor.next()) {
-                                auto [rid, row] = *data;
-                                auto point = std::get<Point<2>>(row[col_idx]);
-                                rtree.add(point, rid);
-                            }
-
-                            return {};
-                        }},
-                    index));
-            }
-        } else {
-            for (auto& [col_idx, index] : col_indices) {
-                TRYV(std::visit(
-                    util::overloaded{
-                        [&](HashIndex& hash) -> std::expected<void, InsertionError> {
-                            hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
-                            return {};
-                        },
-                        [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
-                            btree.add(row[col_idx], rid);
-                            return {};
-                        },
-                        [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
-                            auto point = std::get<Point<2>>(row[col_idx]);
-                            rtree.add(point, rid);
-                            return {};
-                        }},
-                    index));
-            }
+        for (auto& [col_idx, index] : col_indices) {
+            TRYV(std::visit(
+                util::overloaded{[&](HashIndex& hash) -> std::expected<void, InsertionError> {
+                                     hash.add(TRY(val_to_hash_val(row[col_idx])), rid);
+                                     return {};
+                                 },
+                                 [&](BTreeIndex& btree) -> std::expected<void, InsertionError> {
+                                     btree.add(row[col_idx], rid);
+                                     return {};
+                                 },
+                                 [&](RTreeIndex<2>& rtree) -> std::expected<void, InsertionError> {
+                                     auto point = std::get<Point<2>>(row[col_idx]);
+                                     rtree.add(point, rid);
+                                     return {};
+                                 }},
+                index));
         }
 
         return rid;
