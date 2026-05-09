@@ -1,0 +1,53 @@
+source_file := { statement } ;
+
+statement := create_statement |
+             select_statement |
+             insert_statement |
+             delete_statement |
+             drop_statement   |
+             show_statement   ;
+
+create_statement :=
+  "create" "table" [ "if" "not" "exists" ] identifier "("
+  identifier datatype [ ( "index" identifier ) | ( "primary" "key" ) ]
+  { "," identifier datatype [ ( "index" identifier ) | ( "primary" "key" ) ] }
+  ")" [ "from" "file" literal ] ";"
+  ;
+
+select_statement :=
+  "select" "*" "from" identifier [ "where" where_declaration ] ";"
+  ;
+
+insert_statement :=
+  "insert" "into" identifier "values"
+  "(" insert_value ")"
+  { "," "(" insert_value ")" } ";"
+  ;
+
+delete_statement :=
+  "delete" "from" identifier [ "where" where_declaration ] ";"
+  ;
+
+drop_statement :=
+  "drop" "table" [ "if" "exists" ] identifier ";"
+  ;
+
+show_statement :=
+  "show" "index" identifier "." identifier ";"
+  ;
+
+where_declaration :=
+  identifier, (
+    ( "=" expr_lit )                      |
+    ( "between" expr_lit "and" expr_lit ) |
+    ( "in" "(" "point" "(" number "," number ")" "," ( ( "radius" number ) | ( "k" number ) ) ")" )
+  )
+  ;
+
+expr_lit :=
+  literal |
+  number  |
+  "true"  |
+  "false" |
+  "(" number "," number ")"
+  ;
