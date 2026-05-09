@@ -4,11 +4,9 @@
 #include <cstddef>
 #include <expected>
 #include <filesystem>
-#include <memory>
 #include <optional>
 #include <print>
 #include <ranges>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -28,6 +26,10 @@ UnexpectedType::UnexpectedType(parser::ExprLit lit, ColumnType expected_type)
 
 TableNotFound::TableNotFound(std::string table_name)
     : table_name{std::move(table_name)} {}
+
+ColumnNotFound::ColumnNotFound(std::string table_name, std::string col_name)
+    : table_name{std::move(table_name)},
+      col_name{std::move(col_name)} {}
 
 TableAlreadyExists::TableAlreadyExists(std::string table_name)
     : table_name{std::move(table_name)} {}
@@ -572,6 +574,40 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     }
 
     return {};
+}
+
+std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
+    const parser::ShowStatement& stmt) const {
+    auto table = catalog.get_table(eng, stmt.table_name);
+    if (!table)
+        return std::unexpected{TableNotFound{stmt.table_name}};
+
+    const auto& cols = table->get_meta().columns;
+    for (const auto& col : cols)
+        if (col.name == stmt.col_name)
+            goto skip;
+    return std::unexpected{
+        ColumnNotFound{stmt.table_name, stmt.col_name}
+    };
+skip:
+
+    if (auto* index = table->get_index(stmt.col_name))
+        if (auto* rtree = std::get_if<RTreeIndex<2>>(index)) {
+            sink.on_columns({
+                {"level",     ColumnType::Int, std::nullopt},
+                {  "min", ColumnType::Point2d, std::nullopt},
+                {  "max", ColumnType::Point2d, std::nullopt},
+            });
+
+            // TODO: implement rtree cursor
+            // auto cursor = rtree->cursor();
+            // while (auto row = cursor.next())
+            //     sink.on_row({row->level, row->min, row->max});
+
+            return {};
+        }
+
+    return std::unexpected{UnsupportedOperation{stmt.col_name}};
 }
 
 template<>

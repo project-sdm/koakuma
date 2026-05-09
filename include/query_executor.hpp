@@ -6,9 +6,9 @@
 #include <variant>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
+#include "file/seq_file.hpp"
 #include "magic_enum/magic_enum.hpp"
 #include "parser/ast.hpp"
-#include "file/seq_file.hpp"
 
 namespace volcano {
 
@@ -27,6 +27,13 @@ struct TableNotFound {
     std::string table_name;
 
     explicit TableNotFound(std::string table_name);
+};
+
+struct ColumnNotFound {
+    std::string table_name;
+    std::string col_name;
+
+    explicit ColumnNotFound(std::string table_name, std::string col_name);
 };
 
 struct TableAlreadyExists {
@@ -66,6 +73,7 @@ using ExecutionError = std::variant<catalog::InsertionError,
                                     catalog::CreateTableError,
                                     UnexpectedType,
                                     TableNotFound,
+                                    ColumnNotFound,
                                     TableAlreadyExists,
                                     InvalidCsvSchema,
                                     InvalidCsvCell,
@@ -100,6 +108,7 @@ private:
         std::expected<void, ExecutionError> operator()(const parser::InsertStatement& stmt) const;
         std::expected<void, ExecutionError> operator()(const parser::DeleteStatement& stmt) const;
         std::expected<void, ExecutionError> operator()(const parser::DropStatement& stmt) const;
+        std::expected<void, ExecutionError> operator()(const parser::ShowStatement& stmt) const;
 
         [[nodiscard]] static std::expected<volcano::VolcanoIterator, ExecutionError> apply_filter(
             volcano::VolcanoIterator iter,
@@ -130,6 +139,18 @@ struct std::formatter<TableNotFound, char> {
 
     static auto format(const TableNotFound& err, std::format_context& ctx) {
         return std::format_to(ctx.out(), "Table '{}' does not exist.", err.table_name);
+    }
+};
+
+template<>
+struct std::formatter<ColumnNotFound, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format(const ColumnNotFound& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "Table '{}' does not have column {}.", err.table_name,
+                              err.col_name);
     }
 };
 
