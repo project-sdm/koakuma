@@ -9,12 +9,12 @@
 #include <vector>
 #include "catalog.hpp"
 #include "engine/engine.hpp"
+#include "file/seq_file.hpp"
 #include "httplib/httplib.h"
 #include "json/json.hpp"
 #include "magic_enum/magic_enum.hpp"
 #include "parser/parser.hpp"
 #include "query_executor.hpp"
-#include "file/seq_file.hpp"
 
 using nlohmann::json;
 
@@ -165,7 +165,7 @@ namespace api {
     }
 
     int RestServer::run() {
-        std::println("Server listening on {}:{}", config.host, config.port);
+        std::println(stderr, "Server listening on {}:{}", config.host, config.port);
 
         if (!server.listen(config.host, config.port)) {
             std::println(stderr, "Failed to bind server to {}:{}", config.host, config.port);
