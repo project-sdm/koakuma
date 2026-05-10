@@ -4,10 +4,13 @@
 #include <cstddef>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include "engine/engine.hpp"
+#include "file/append_file.hpp"
 #include "file/common.hpp"
 #include "file/seq_file.hpp"
 #include "index/btree.hpp"
@@ -26,6 +29,22 @@ namespace catalog {
     using CreateTableError = std::variant<IncompatibleColumnIndex>;
 
     using AnyIndex = std::variant<BTreeIndex, HashIndex, RTreeIndex<2>>;
+    using AnyFile = std::variant<SeqFile, AppendFile>;
+
+    class FileCursor {
+    public:
+        using AnyCursor = std::variant<SeqFile::Cursor, AppendFile::Cursor>;
+        using value_type = std::pair<Rid, Row>;
+
+        explicit FileCursor(AnyCursor cursor);
+
+        std::optional<value_type> next() {
+            return std::visit([&](auto&& inner) { return inner.next(); }, cursor);
+        }
+
+    private:
+        AnyCursor cursor;
+    };
 
     struct DuplicatePrimaryKey {
         Value pkey;
@@ -37,26 +56,27 @@ namespace catalog {
 
     class Table {
     public:
-        explicit Table(SeqFile seq_file,
-                       SeqFile::Meta meta,
+        explicit Table(AnyFile file,
+                       UnknownFile::Header meta,
                        std::unordered_map<std::string, std::size_t> col_nums,
                        std::unordered_map<std::size_t, AnyIndex> col_indices);
 
-        const SeqFile::Meta& get_meta() const;
+        const UnknownFile::Header& get_meta() const;
         [[nodiscard]] std::size_t col_num(const std::string& col_name) const;
         [[nodiscard]] std::size_t pkey_col_num() const;
 
         std::expected<Rid, InsertionError> insert(const Row& row);
         std::expected<bool, ValueNotHashable> delete_by_pkey(const Value& pkey);
 
-        SeqFile::Cursor cursor();
-        AnyIndex* get_index(const std::string& col_name);
+        [[nodiscard]] FileCursor cursor();
+        [[nodiscard]] Row read_rid(Rid rid);
 
-        SeqFile& get_seq_file();
+        AnyIndex* get_index(const std::string& col_name);
+        SeqFile* as_seq_file();
 
     private:
-        SeqFile seq_file;
-        SeqFile::Meta meta;
+        AnyFile file;
+        UnknownFile::Header meta;
         std::unordered_map<std::string, std::size_t> col_nums;
         std::unordered_map<std::size_t, AnyIndex> col_indices;
 
@@ -81,10 +101,11 @@ namespace catalog {
         [[nodiscard]] std::filesystem::path table_path(const std::string& name) const;
         [[nodiscard]] std::optional<Table> get_table(Engine& eng, const std::string& name) const;
 
-        std::expected<bool, CreateTableError> create_table(Engine& eng,
-                                                           const std::string& name,
-                                                           std::vector<Column> columns,
-                                                           std::size_t pkey_col) const;
+        std::expected<bool, CreateTableError> create_table(
+            Engine& eng,
+            const std::string& name,
+            const std::vector<Column>& columns,
+            std::optional<std::size_t> pkey_col) const;
 
         [[nodiscard]] bool drop_table(const std::string& name) const;
     };

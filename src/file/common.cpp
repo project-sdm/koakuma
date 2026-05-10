@@ -3,10 +3,9 @@
 
 UnknownFile::Header::Header() = default;
 
-UnknownFile::Header::Header(FileType file_type, std::vector<Column> columns, u32 pkey_col)
+UnknownFile::Header::Header(FileType file_type, std::vector<Column> columns)
     : file_type{file_type},
-      columns{std::move(columns)},
-      pkey_col{pkey_col} {}
+      columns{std::move(columns)} {}
 
 Rid::Rid() = default;
 

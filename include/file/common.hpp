@@ -36,7 +36,7 @@ enum class IndexType : u8 {
 
 enum class FileType : u8 {
     Seq,
-    BTree,
+    Append,
 };
 
 struct Column {
@@ -107,11 +107,33 @@ public:
     struct Header {
         FileType file_type{};
         std::vector<Column> columns;
-        u32 pkey_col = -1;
 
         Header();
-        Header(FileType file_type, std::vector<Column> columns, u32 pkey_col);
+        Header(FileType file_type, std::vector<Column> columns);
     };
+};
+
+template<>
+struct pack::PackSize<UnknownFile::Header> {
+    std::size_t operator()(const UnknownFile::Header& hdr) const {
+        return pack_size(hdr.file_type) + pack_size(hdr.columns);
+    }
+};
+
+template<>
+struct pack::Pack<UnknownFile::Header> {
+    void operator()(const UnknownFile::Header& hdr, u8*& dest) const {
+        pack<>(hdr.file_type, dest);
+        pack<>(hdr.columns, dest);
+    }
+};
+
+template<>
+struct pack::Unpack<UnknownFile::Header> {
+    void operator()(UnknownFile::Header& dest, const u8*& src) const {
+        unpack<>(dest.file_type, src);
+        unpack<>(dest.columns, src);
+    }
 };
 
 // class File {

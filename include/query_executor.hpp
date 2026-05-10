@@ -80,6 +80,8 @@ struct UnsupportedOperation {
     explicit UnsupportedOperation(std::string col_name);
 };
 
+struct UnsupportedDelete {};
+
 using ExecutionError = std::variant<catalog::InsertionError,
                                     catalog::CreateTableError,
                                     ColumnCountMismatch,
@@ -92,6 +94,7 @@ using ExecutionError = std::variant<catalog::InsertionError,
                                     FileNotFound,
                                     InvalidIndexName,
                                     UnsupportedOperation,
+                                    UnsupportedDelete,
                                     NoPrimaryKey>;
 
 class QueryExecutor {
@@ -245,6 +248,17 @@ struct std::formatter<UnsupportedOperation, char> {
     static auto format(const UnsupportedOperation& err, std::format_context& ctx) {
         return std::format_to(
             ctx.out(), "Unsupported operation on column '{}' without proper index.", err.col_name);
+    }
+};
+
+template<>
+struct std::formatter<UnsupportedDelete, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format([[maybe_unused]] const UnsupportedDelete& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "Cannot delete on an table without primary key (yet).");
     }
 };
 

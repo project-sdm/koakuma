@@ -13,35 +13,37 @@
 #include "types.hpp"
 #include "util.hpp"
 
-struct SeqHeader : public UnknownFile::Header {
+struct SeqHeader {
+    UnknownFile::Header hdr;
+    std::size_t pkey_col = 0;
     pnum_t main_pages = 0;
 
-    SeqHeader() = default;
+    SeqHeader();
     SeqHeader(std::vector<Column> columns, u32 pkey_col);
 };
 
 template<>
 struct pack::PackSize<SeqHeader> {
     std::size_t operator()(const SeqHeader& hdr) const {
-        return pack_size<>(hdr.columns) + pack_size<>(hdr.pkey_col) + pack_size<>(hdr.main_pages);
+        return pack_size<>(hdr.hdr) + pack_size<>(hdr.main_pages) + pack_size<>(hdr.pkey_col);
     }
 };
 
 template<>
 struct pack::Pack<SeqHeader> {
     void operator()(const SeqHeader& hdr, u8*& dest) const {
-        pack<>(hdr.columns, dest);
-        pack<>(hdr.pkey_col, dest);
+        pack<>(hdr.hdr, dest);
         pack<>(hdr.main_pages, dest);
+        pack<>(hdr.pkey_col, dest);
     }
 };
 
 template<>
 struct pack::Unpack<SeqHeader> {
     void operator()(SeqHeader& dest, const u8*& src) const {
-        unpack<>(dest.columns, src);
-        unpack<>(dest.pkey_col, src);
+        unpack<>(dest.hdr, src);
         unpack<>(dest.main_pages, src);
+        unpack<>(dest.pkey_col, src);
     }
 };
 
@@ -126,14 +128,7 @@ public:
 
     void init(std::vector<Column> columns, u32 pkey_col);
 
-    struct Meta {
-        std::vector<Column> columns;
-        std::size_t pkey_col;
-
-        Meta(std::vector<Column> columns, std::size_t pkey_col);
-    };
-
-    [[nodiscard]] Meta read_meta();
+    [[nodiscard]] u32 pkey_col_num() const;
 
     [[nodiscard]] Row read_rid(Rid rid) const;
     std::optional<std::pair<Rid, InsertResult>> add(const Row& row);

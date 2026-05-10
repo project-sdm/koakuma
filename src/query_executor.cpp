@@ -176,35 +176,35 @@ namespace volcano {
     template<util::iter_of<Rid> Iter>
     class IndexScan {
     public:
-        explicit IndexScan(SeqFile& seq_file, Iter it)
-            : seq_file{seq_file},
+        explicit IndexScan(catalog::Table& seq_file, Iter it)
+            : table{seq_file},
               it{std::move(it)} {}
 
         std::expected<std::optional<Row>, ExecutionError> next() {
             Rid rid = TRY_OPT(it.next());
-            return seq_file.read_rid(rid);
+            return table.read_rid(rid);
         }
 
     private:
-        SeqFile& seq_file;
+        catalog::Table& table;
         Iter it;
     };
 
     template<util::iter_of<Rid> Iter>
     class PointScan {
     public:
-        explicit PointScan(SeqFile& seq_file,
+        explicit PointScan(catalog::Table& table,
                            QueryExecutor::RowSink& sink,
                            std::size_t col_num,
                            Iter it)
-            : seq_file{seq_file},
+            : table{table},
               sink{sink},
               col_num{col_num},
               it{std::move(it)} {}
 
         std::expected<std::optional<Row>, ExecutionError> next() {
             Rid rid = TRY_OPT(it.next());
-            Row row = seq_file.read_rid(rid);
+            Row row = table.read_rid(rid);
 
             auto point = std::get<Point<2>>(row[col_num]);
             sink.on_rect(0, Rect{point, point});
@@ -212,14 +212,14 @@ namespace volcano {
         }
 
     private:
-        SeqFile& seq_file;
+        catalog::Table& table;
         QueryExecutor::RowSink& sink;
         std::size_t col_num;
         Iter it;
     };
     class Filter {
     public:
-        Filter(VolcanoIterator child, parser::Filter filter, SeqFile::Meta meta)
+        Filter(VolcanoIterator child, parser::Filter filter, UnknownFile::Header meta)
             : child{std::move(child)},
               meta{std::move(meta)},
               data{std::move(filter.data)} {
@@ -265,7 +265,7 @@ namespace volcano {
 
     private:
         VolcanoIterator child;
-        SeqFile::Meta meta;
+        UnknownFile::Header meta;
         parser::FilterData data;
         std::size_t col_num{};
     };
@@ -385,10 +385,7 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         columns.emplace_back(col.name, get_col_type(col.type), col_index);
     }
 
-    if (!pkey_col)
-        return std::unexpected{NoPrimaryKey{}};
-
-    bool created = TRY(catalog.create_table(eng, stmt.table_name, columns, *pkey_col));
+    bool created = TRY(catalog.create_table(eng, stmt.table_name, columns, pkey_col));
 
     if (!created) {
         if (!stmt.if_not_exists)
@@ -476,22 +473,24 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
     std::size_t col_num = table.col_num(filter.col_name);
     auto col = meta.columns.at(col_num);
 
-    if (col_num == table.pkey_col_num()) {
-        if (const auto* eq_filter = std::get_if<parser::EqFilter>(&filter.data)) {
-            sink.on_message("Using binary search on primary key.");
-            auto val = TRY(lit_cast(eq_filter->value, col.type));
+    if (auto* seq_file = table.as_seq_file()) {
+        if (col_num == seq_file->pkey_col_num()) {
+            if (const auto* eq_filter = std::get_if<parser::EqFilter>(&filter.data)) {
+                sink.on_message("Using binary search on primary key.");
+                auto val = TRY(lit_cast(eq_filter->value, col.type));
 
-            volcano::PKeyScan scan{table.get_seq_file(), std::move(val)};
-            return volcano::VolcanoIterator{std::move(scan)};
-        }
+                volcano::PKeyScan scan{*seq_file, std::move(val)};
+                return volcano::VolcanoIterator{std::move(scan)};
+            }
 
-        if (const auto* range_filter = std::get_if<parser::RangeFilter>(&filter.data)) {
-            sink.on_message("Using range search on primary key.");
-            auto low = TRY(lit_cast(range_filter->low, col.type));
-            auto high = TRY(lit_cast(range_filter->high, col.type));
+            if (const auto* range_filter = std::get_if<parser::RangeFilter>(&filter.data)) {
+                sink.on_message("Using range search on primary key.");
+                auto low = TRY(lit_cast(range_filter->low, col.type));
+                auto high = TRY(lit_cast(range_filter->high, col.type));
 
-            volcano::SeqScan scan{table.get_seq_file().range_search(low, high)};
-            return volcano::VolcanoIterator{std::move(scan)};
+                volcano::SeqScan scan{seq_file->range_search(low, high)};
+                return volcano::VolcanoIterator{std::move(scan)};
+            }
         }
     }
 
@@ -503,7 +502,7 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
                 auto hash_val = TRY(val_to_hash_val(std::move(val)));
                 auto cursor = hash->search(hash_val);
 
-                volcano::IndexScan scan{table.get_seq_file(), std::move(cursor)};
+                volcano::IndexScan scan{table, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
 
@@ -512,7 +511,7 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
                 auto val = TRY(lit_cast(eq_filter->value, col.type));
                 auto cursor = btree->search(val);
 
-                volcano::IndexScan scan{table.get_seq_file(), std::move(cursor)};
+                volcano::IndexScan scan{table, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
         }
@@ -524,10 +523,9 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
                 auto low = TRY(lit_cast(range_filter->low, col.type));
                 auto high = TRY(lit_cast(range_filter->high, col.type));
 
-                auto& seq_file = table.get_seq_file();
                 auto cursor = btree->range_search(low, high);
 
-                volcano::IndexScan scan{seq_file, std::move(cursor)};
+                volcano::IndexScan scan{table, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
         }
@@ -542,10 +540,9 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
                 sink.on_point(point);
                 sink.on_radius(rad_filter->radius);
 
-                auto& seq_file = table.get_seq_file();
                 auto cursor = rtree->range_search(point, rad_filter->radius);
 
-                volcano::PointScan scan{seq_file, sink, col_num, std::move(cursor)};
+                volcano::PointScan scan{table, sink, col_num, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
         }
@@ -559,10 +556,9 @@ std::expected<volcano::VolcanoIterator, ExecutionError> QueryExecutor::Executor:
                 sink.on_plane();
                 sink.on_point(point);
 
-                auto& seq_file = table.get_seq_file();
                 auto cursor = rtree->knn(point, k_filter->k);
 
-                volcano::PointScan scan{seq_file, sink, col_num, std::move(cursor)};
+                volcano::PointScan scan{table, sink, col_num, std::move(cursor)};
                 return volcano::VolcanoIterator{std::move(scan)};
             }
         }
@@ -615,12 +611,16 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     if (!table)
         return std::unexpected{TableNotFound{stmt.table_name}};
 
+    SeqFile* seq_file = table->as_seq_file();
+    if (seq_file == nullptr)
+        return std::unexpected{UnsupportedDelete{}};
+
     auto meta = table->get_meta();
 
     std::size_t col_num = table->col_num(stmt.col_name);
     auto& col = meta.columns[col_num];
 
-    if (col_num == table->pkey_col_num()) {
+    if (col_num == seq_file->pkey_col_num()) {
         auto pkey_val = TRY(lit_cast(stmt.value, col.type));
 
         if (!TRY(table->delete_by_pkey(pkey_val)))

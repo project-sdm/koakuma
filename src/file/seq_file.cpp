@@ -1,7 +1,6 @@
 #include "file/seq_file.hpp"
 #include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
@@ -15,8 +14,11 @@
 SeqFile::SlotExtra::SlotExtra(bool active)
     : active{active} {}
 
+SeqHeader::SeqHeader() = default;
+
 SeqHeader::SeqHeader(std::vector<Column> columns, u32 pkey_col)
-    : UnknownFile::Header{FileType::Seq, std::move(columns), pkey_col} {}
+    : hdr{FileType::Seq, std::move(columns)},
+      pkey_col{pkey_col} {}
 
 SeqFile::SeqFile(Engine& engine, FileId fid)
     : eng{engine},
@@ -59,7 +61,7 @@ std::optional<u32> SeqFile::find_slot_by_pkey_in_main_page(pnum_t pnum, const Va
 
 std::optional<pnum_t> SeqFile::find_main_page_by_pkey(const Value& pkey) {
     auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
-    assert(file_hdr.pkey_col < file_hdr.columns.size());
+    assert(file_hdr.pkey_col < file_hdr.hdr.columns.size());
 
     pnum_t plow = 1;
     pnum_t phigh = plow + file_hdr.main_pages;
@@ -168,9 +170,9 @@ void SeqFile::rebuild(SeqHeader& file_hdr) {
         }
     }
 
-    u32 pkey_col = file_hdr.pkey_col;
-    std::ranges::sort(aux_rows,
-                      [&](const Row& a, const Row& b) { return a[pkey_col] < b[pkey_col]; });
+    std::ranges::sort(aux_rows, [&](const Row& a, const Row& b) {
+        return a[file_hdr.pkey_col] < b[file_hdr.pkey_col];
+    });
 
     auto aux_it = aux_rows.begin();
     auto aux_end = aux_rows.end();
@@ -198,8 +200,8 @@ void SeqFile::rebuild(SeqHeader& file_hdr) {
             Row next_row;
 
             if (aux_it != aux_end &&
-                (!main_cursor.peek() ||
-                 (*aux_it)[pkey_col] < main_cursor.peek()->get().second[pkey_col])) {
+                (!main_cursor.peek() || (*aux_it)[file_hdr.pkey_col] <
+                                            main_cursor.peek()->get().second[file_hdr.pkey_col])) {
                 next_row = *aux_it;
                 ++aux_it;
             } else {
@@ -265,15 +267,6 @@ std::optional<std::pair<Rid, Row>> SeqFile::remove(const Value& pkey) {
     page.write_slot_extra(rid.slot_idx, extra);
 
     return std::make_pair(rid, std::move(row));
-}
-
-SeqFile::Meta::Meta(std::vector<Column> columns, std::size_t pkey_col)
-    : columns{std::move(columns)},
-      pkey_col{pkey_col} {}
-
-SeqFile::Meta SeqFile::read_meta() {
-    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
-    return Meta{file_hdr.columns, file_hdr.pkey_col};
 }
 
 using Cursor = SeqFile::Cursor;
@@ -382,4 +375,9 @@ std::optional<RangeCursor::value_type> RangeCursor::next() {
 
     return std::make_pair(rid, row);
     ;
+}
+
+u32 SeqFile::pkey_col_num() const {
+    auto file_hdr = eng.file_mgr.read_user_header<SeqHeader>(fid);
+    return file_hdr.pkey_col;
 }

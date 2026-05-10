@@ -52,7 +52,7 @@ namespace pack {
     template<typename T>
         requires std::is_trivially_copyable_v<T>
     struct PackSize<T> {
-        [[nodiscard]] std::size_t operator()(const T& val) const {
+        std::size_t operator()(const T& val) const {
             return sizeof(val);
         }
     };
@@ -77,7 +77,7 @@ namespace pack {
 
     template<>
     struct PackSize<std::string> {
-        [[nodiscard]] std::size_t operator()(const std::string& str) const {
+        std::size_t operator()(const std::string& str) const {
             return pack_size<>(str.size()) + str.size();
         }
     };
@@ -105,7 +105,7 @@ namespace pack {
 
     template<typename T>
     struct PackSize<std::vector<T>> {
-        [[nodiscard]] std::size_t operator()(const std::vector<T>& vec) const {
+        std::size_t operator()(const std::vector<T>& vec) const {
             std::size_t out = pack_size<>(vec.size());
 
             for (const auto& el : vec)
@@ -140,7 +140,7 @@ namespace pack {
 
     template<typename... T>
     struct PackSize<std::variant<T...>> {
-        [[nodiscard]] std::size_t operator()(const std::variant<T...>& var) const {
+        std::size_t operator()(const std::variant<T...>& var) const {
             std::size_t idx_size = pack_size<>(var.index());
             std::size_t val_size = std::visit([&](auto&& val) { return pack_size<>(val); }, var);
             return idx_size + val_size;
@@ -165,6 +165,25 @@ namespace pack {
             dest = variant_from_index<std::variant<T...>>(index);
             std::visit([&](auto& val) { unpack<>(val, src); }, dest);
         }
+    };
+
+    template<>
+    struct PackSize<std::monostate> {
+        std::size_t operator()([[maybe_unused]] const std::monostate& m) const {
+            return 0;
+        }
+    };
+
+    template<>
+    struct Pack<std::monostate> {
+        void operator()([[maybe_unused]] const std::monostate& m,
+                        [[maybe_unused]] u8*& dest) const {}
+    };
+
+    template<>
+    struct Unpack<std::monostate> {
+        void operator()([[maybe_unused]] std::monostate& dest,
+                        [[maybe_unused]] const u8*& src) const {}
     };
 
     template<typename T>

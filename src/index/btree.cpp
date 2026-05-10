@@ -287,9 +287,6 @@ void BTreeIndex::add(const Value& key, Rid rid) {
             new_root_page.init();
             new_root_page.insert(0, SlotExtra::inner(left_pnum), right_min);
             new_root_page.header_extra().last_child = right_pnum;
-
-            std::print("new root: ");
-            ugly_print();
         }
 
         file_hdr.root = new_root_pnum;

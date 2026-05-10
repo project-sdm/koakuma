@@ -28,6 +28,7 @@ add_executable(koakuma
   src/engine/file_manager.cpp
   src/file/common.cpp
   src/file/seq_file.cpp
+  src/file/append_file.cpp
   src/index/btree.cpp
   src/index/hash.cpp
   src/index/rtree.cpp
