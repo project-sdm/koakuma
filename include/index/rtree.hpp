@@ -148,7 +148,7 @@ private:
         std::vector<Record> buffer;
         std::vector<Group> group;
         std::array<Rect<N>, 2> cover;
-        std::array<f64, 2> area{};
+        std::array<f64, 2> volume{};
         std::array<std::size_t, 2> count{};
     };
 
@@ -186,7 +186,7 @@ private:
                 ? partition.buffer[idx].rect
                 : partition.cover[group_idx].merge(partition.buffer[idx].rect);
 
-        partition.area[group_idx] = partition.cover[group_idx].volume();
+        partition.volume[group_idx] = partition.cover[group_idx].volume();
         partition.count[group_idx]++;
     }
 
@@ -214,8 +214,8 @@ private:
                 auto merged0 = partition.cover[0].merge(rect);
                 auto merged1 = partition.cover[1].merge(rect);
 
-                f64 cost0 = merged0.volume() - partition.area[0];
-                f64 cost1 = merged1.volume() - partition.area[1];
+                f64 cost0 = merged0.volume() - partition.volume[0];
+                f64 cost1 = merged1.volume() - partition.volume[1];
 
                 f64 diff = std::abs(cost0 - cost1);
                 Group preferred = (cost0 < cost1) ? Group::A : Group::B;
