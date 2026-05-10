@@ -193,7 +193,7 @@ bool FileManager::read_page(const FileId& fid, pnum_t pnum, std::span<u8> data) 
     auto& file = open_files.at(fid);
 
     std::thread::id id = std::this_thread::get_id();
-    std::println("<{}> read page from {}", id, std::string(file.path));
+    std::println("<{}> read page {} from {}", id, pnum, std::string(file.path));
 
     return read_page(file.stream, pnum, data);
 }
@@ -204,7 +204,7 @@ void FileManager::write_page(const FileId& fid, pnum_t pnum, std::span<const u8>
     auto& file = open_files.at(fid);
 
     std::thread::id id = std::this_thread::get_id();
-    std::println("<{}> write page to {}", id, std::string(file.path));
+    std::println("<{}> write page {} to {}", id, pnum, std::string(file.path));
 
     write_page(file.stream, pnum, data);
 }
