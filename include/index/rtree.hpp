@@ -109,6 +109,8 @@ private:
     using SlotValue = std::variant<Rid, pnum_t>;
     using NodePage = RecordPage<Record, NodeHeader>;
 
+    static constexpr double EPSILON = 1e-9;
+
     u32 choose_subtree(const NodePage& page, const Rect<N>& rect) const {
         if (page.const_header_extra().level == 0)
             throw std::invalid_argument("choose_subtree called on leaf node");
@@ -125,10 +127,9 @@ private:
             const f64 cur_volume = cur.rect.volume();
             const f64 cur_enlargement = cur.rect.merge(rect).volume() - cur_volume;
 
-            // NOTE: won't cur_enlargement == best_enlargement always be false
-            // due to float precision?
             if (cur_enlargement < best_enlargement ||
-                (cur_enlargement == best_enlargement && cur_volume < best_volume)) {
+                (std::fabs(cur_enlargement - best_enlargement) < EPSILON &&
+                 cur_volume < best_volume)) {
                 best = i;
                 best_enlargement = cur_enlargement;
                 best_volume = cur_volume;
@@ -312,8 +313,9 @@ private:
             if (level < target_level)
                 throw std::invalid_argument("invalid rtree level in insert");
 
-            if (level == target_level)
+            if (level == target_level) {
                 return add_branch(page, ins_rec, new_pnum);
+            }
 
             idx = choose_subtree(page, ins_rec.rect);
             child_pnum = std::get<pnum_t>(page.read(idx).var);
