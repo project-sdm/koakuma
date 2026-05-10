@@ -12,21 +12,6 @@
 #include "file/common.hpp"
 #include "util.hpp"
 
-Rid::Rid() = default;
-
-Rid::Rid(pnum_t pnum, u32 slot_idx)
-    : pnum{pnum},
-      slot_idx{slot_idx} {}
-
-bool Rid::operator==(const Rid& other) const = default;
-
-Column::Column() = default;
-
-Column::Column(std::string name, ColumnType type, std::optional<IndexType> index)
-    : name{std::move(name)},
-      type{type},
-      index{index} {}
-
 SeqFile::SlotExtra::SlotExtra(bool active)
     : active{active} {}
 
