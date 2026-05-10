@@ -51,6 +51,8 @@ struct TableAlreadyExists {
     explicit TableAlreadyExists(std::string table_name);
 };
 
+struct NoPrimaryKey {};
+
 struct FileNotFound {
     std::filesystem::path path;
 
@@ -89,7 +91,8 @@ using ExecutionError = std::variant<catalog::InsertionError,
                                     InvalidCsvCell,
                                     FileNotFound,
                                     InvalidIndexName,
-                                    UnsupportedOperation>;
+                                    UnsupportedOperation,
+                                    NoPrimaryKey>;
 
 class QueryExecutor {
 public:
@@ -257,6 +260,16 @@ struct std::formatter<ColumnCountMismatch, char> {
     }
 };
 
+template<>
+struct std::formatter<NoPrimaryKey, char> {
+    static constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    static auto format([[maybe_unused]] const NoPrimaryKey& err, std::format_context& ctx) {
+        return std::format_to(ctx.out(), "No primary key specified.");
+    }
+};
 template<>
 struct std::formatter<ExecutionError, char> {
     static constexpr auto parse(std::format_parse_context& ctx) {

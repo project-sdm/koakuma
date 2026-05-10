@@ -361,7 +361,8 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
     std::vector<Column> columns;
     columns.reserve(n_columns);
 
-    std::size_t pkey_col = 0;
+    std::optional<std::size_t> pkey_col = std::nullopt;
+
     for (std::size_t i = 0; i < n_columns; ++i) {
         const auto& col = stmt.columns[i];
         std::optional<IndexType> col_index = std::nullopt;
@@ -384,7 +385,10 @@ std::expected<void, ExecutionError> QueryExecutor::Executor::operator()(
         columns.emplace_back(col.name, get_col_type(col.type), col_index);
     }
 
-    bool created = TRY(catalog.create_table(eng, stmt.table_name, columns, pkey_col));
+    if (!pkey_col)
+        return std::unexpected{NoPrimaryKey{}};
+
+    bool created = TRY(catalog.create_table(eng, stmt.table_name, columns, *pkey_col));
 
     if (!created) {
         if (!stmt.if_not_exists)
