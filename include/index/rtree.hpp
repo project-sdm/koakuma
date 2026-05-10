@@ -9,7 +9,6 @@
 #include <cstdlib>
 #include <functional>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <print>
 #include <queue>
@@ -770,97 +769,6 @@ public:
     [[nodiscard]] RectCursor rect_cursor() {
         auto file_hdr = eng.file_mgr.read_user_header<RTreeHeader>(fid);
         return RectCursor{fid, eng.buf_mgr, file_hdr.root};
-    }
-};
-
-template<std::size_t N, typename T, std::size_t MAX>
-class RTree {
-public:
-    struct Node;
-    struct Branch;
-
-    using NodePtr = std::unique_ptr<Node>;
-    using VariantType = std::variant<T, NodePtr>;
-
-private:
-    NodePtr root;
-
-    void remove_at(Node* node, std::size_t idx) {
-        if (idx >= node->count) {
-            throw std::out_of_range("remove_at out of range");
-        }
-        node->branches[idx] = std::move(node->branches[node->count - 1]);
-        --node->count;
-    }
-
-    bool remove_recursive(const Rect<N>* rect,
-                          const T& value,
-                          Node* node,
-                          std::vector<NodePtr>& reinsert_list) {
-        if (node->level > 0) {
-            for (std::size_t i = 0; i < node->count; ++i) {
-                auto& branch = node->branches.at(i);
-
-                if ((rect == nullptr) || branch.rect.intersects(*rect)) {
-                    if (!remove_recursive(rect, value, branch.child().get(), reinsert_list)) {
-                        auto& child_ptr = branch.child();
-
-                        if (child_ptr->count >= MAX / 2) {
-                            branch.rect = node_cover(child_ptr.get());
-                        } else {
-                            reinsert(std::move(child_ptr), reinsert_list);
-                            remove_at(node, i);
-                        }
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-        for (std::size_t i = 0; i < node->count; ++i) {
-            auto& branch = node->branches.at(i);
-
-            if (branch.is_leaf() && branch.value() == value) {
-                remove_at(node, i);
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool remove(const Rect<N>* rect, const T& value) {
-        if (!root) {
-            return false;
-        }
-
-        std::vector<NodePtr> reinsert_list;
-
-        bool not_found = remove_recursive(rect, value, root.get(), reinsert_list);
-
-        if (!not_found) {
-            for (auto& node : reinsert_list) {
-                for (std::size_t i = 0; i < node->count; ++i) {
-                    NodePtr new_node;
-                    insert_recursive(root.get(), std::move(node->branches.at(i)), new_node,
-                                     node->level);
-                }
-            }
-
-            if (root->count == 1 && root->level != 0) {
-                root = std::move(root->branches.at(0).child());
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-public:
-    RTree() = default;
-
-    bool remove(const Rect<N>& rect, const T& value) {
-        return remove(&rect, value);
     }
 };
 
