@@ -197,8 +197,13 @@ namespace api {
         });
 
         server.Post("/query", [this](const httplib::Request& req, httplib::Response& res) {
+            std::thread::id id = std::this_thread::get_id();
+            std::println("<{}> begin", id);
+
             res.set_header("Access-Control-Allow-Origin", "*");
             handle_query(req, res);
+
+            std::println("<{}> end", id);
         });
     }
 

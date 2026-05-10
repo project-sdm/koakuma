@@ -7,6 +7,8 @@
 #include <fstream>
 #include <ios>
 #include <optional>
+#include <print>
+#include <thread>
 #include <utility>
 #include "types.hpp"
 #include "util.hpp"
@@ -189,6 +191,10 @@ bool FileManager::read_page(const FileId& fid, pnum_t pnum, std::span<u8> data) 
     assert(pnum != FILE_HEADER_PAGE);
 
     auto& file = open_files.at(fid);
+
+    std::thread::id id = std::this_thread::get_id();
+    std::println("<{}> read page from {}", id, std::string(file.path));
+
     return read_page(file.stream, pnum, data);
 }
 
@@ -196,6 +202,10 @@ void FileManager::write_page(const FileId& fid, pnum_t pnum, std::span<const u8>
     assert(pnum != FILE_HEADER_PAGE);
 
     auto& file = open_files.at(fid);
+
+    std::thread::id id = std::this_thread::get_id();
+    std::println("<{}> write page to {}", id, std::string(file.path));
+
     write_page(file.stream, pnum, data);
 }
 
